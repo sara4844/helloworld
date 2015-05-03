@@ -32,6 +32,7 @@ typedef struct _Bank
     // Protocol state
 	unsigned char key[32];
 	HashTable *users;
+	int user_count;
     // TODO add more, as needed
 } Bank;
 

@@ -47,7 +47,6 @@ int main(int argc, char**argv)
 	}
 	
 	//generate random string
-	//TODO: implement this with OpenSSl rand_bytes()? -- I couldn't get this to work
 	for (i=0; i< 32; i++){
 		key[i]=rand() % 128;
 	}

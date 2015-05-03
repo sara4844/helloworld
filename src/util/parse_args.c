@@ -22,7 +22,7 @@ int get_ascii_arg(char *command, int start, char **arg_out){
 				return -1;
 			arg_pos = 0;
 			arg[arg_pos++] = c;
-			while(!isspace(c = command[pos++])){
+			while(!isspace(c = command[pos++]) && c !=0){
 				if(!(C_IS_ASCII))
 					return -1;
 				if(arg_pos > 250){
@@ -48,14 +48,14 @@ int get_letter_arg(char *command, int start, char **arg_out){
 	while ( (c = command[pos++]) != 0){
 		if(!isspace(c)){
 			if(!(C_IS_LETTER)){
-				printf("not a letter\n");
+				printf("%c is not a letter\n", c);
 				return -1;
 			}
 			arg_pos = 0;
 			arg[arg_pos++] = c;
-			while(!isspace(c = command[pos++])){
+			while(!isspace(c = command[pos++]) && c !=0){
 				if(!(C_IS_LETTER)){
-					printf("not a letter\n");
+					printf("%c is not a letter\n",c );
 					return -1;
 				}
 				if(arg_pos > 250){
@@ -88,7 +88,7 @@ int get_digit_arg(char *command, int start, int *arg_out){
 			}
 			arg_pos = 0;
 			arg[arg_pos++] = c;
-			while(!isspace(c = command[pos++])){
+			while(!isspace(c = command[pos++]) && c !=0){
 				if(!(C_IS_DIGIT)){
 					printf("not a digit\n");
 					return -1;

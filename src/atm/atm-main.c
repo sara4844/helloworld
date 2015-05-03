@@ -21,10 +21,15 @@ int main(int argc, char**argv)
     fflush(stdout);
 
     while (fgets(user_input, 300, stdin) != NULL)
-    {
-        atm_process_command(atm, user_input);
-        printf("%s", prompt);
-        fflush(stdout);
+	{
+		atm_process_command(atm, user_input);
+		if (atm->logged_in){
+			printf("ATM (%s):", atm->current_user->username);
+		}
+		else{
+			printf("%s", prompt);
+		}
+		fflush(stdout);
     }
 	return EXIT_SUCCESS;
 }

@@ -50,7 +50,8 @@ Bank* bank_create(char *filename)
 	
 	//set up hash table to store users
 	//TODO: be able to resize hash if reaches limit
-	bank->users = hash_table_create(100); 
+	bank->users = hash_table_create(1000);
+	bank->user_count = 0;
 
     return bank;
 }
@@ -80,44 +81,40 @@ ssize_t bank_recv(Bank *bank, char *data, size_t max_data_len)
 void bank_process_local_command(Bank *bank, char *command, size_t len)
 {
 	char card_file_name[255];
-	char username[250], *cmd_arg, *arg;
+	char * username, *cmd_arg, *arg;
 	int input_error = 1, pin, ret, cmd_pos = 0, pos = 0, i =0, amt, int_arg;
 	long int balance;
-	User new_user, *user;
+	User *new_user, *user;
 	FILE *card_file;
 	time_t t;
 	srand((unsigned)time(&t));
 	
 	arg = malloc(250 * sizeof(char));
 	cmd_arg = malloc(250 * sizeof(char));
+	username = malloc(250*sizeof(char));
 	
 	ret = get_ascii_arg(command, pos, &cmd_arg);
 	cmd_pos += ret+1;
-	//printf("ret: %d new pos: %d\n", ret, pos);
 	
 	if (strcmp(cmd_arg,"create-user") == 0){
 		//username
 		pos = cmd_pos;
 		ret = get_letter_arg(command, pos, &arg);
-		//printf("ret: %d \n", ret);
 		if (ret > 0 && ret <= 250){
 			pos += ret+1;
-			memcpy(username, arg, strlen(arg)+1);
-			//printf("username: %s\n", username);
+			memcpy(username, arg, strlen(arg));
+			username[strlen(arg)]=0;
 			
 			// pin
 			ret = get_digit_arg(command, pos, &int_arg);
-			//printf("ret: %d \n", ret);
 			if(ret == 4){
 				pos += ret+1;
-				//printf("ret: %d new pos: %d\n", ret, pos);
-				pin = int_arg; //safe because already checked are digits
-				//printf("PIN: %d\n", pin);
+				pin = int_arg; 
+				
 				//balance
 				ret = get_digit_arg(command, pos, &int_arg);
 				if (ret > 0 && get_ascii_arg(command, pos+ret+1, &arg) == 0){
 					balance = int_arg;
-					//printf("balance: %d\n", balance);
 					input_error = 0;
 				}
 			}
@@ -134,25 +131,26 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 		}
 		
 		//create user
-		//printf("making new user\n");
-		memcpy(new_user.username, username, sizeof(username));
-		//printf("%s\n",new_user.username);
-		new_user.pin = pin;
-		new_user.balance = balance;
+		new_user = malloc(sizeof(User));
+		
+		memcpy(new_user->username, username, strlen(username));
+		new_user->pin = pin;
+		new_user->balance = balance;
 		for (i=0; i< 32; i++){
-			new_user.card_key[i]=rand() % 128; //no, not perfectly distributed but good enough?
+			new_user->card_key[i]=rand() % 128;
 		}
 		 
-		hash_table_add(bank->users, username, &new_user);
+		hash_table_add(bank->users, username, new_user);
 		strncpy(card_file_name, username, strlen(username)+1);
 		strncat(card_file_name, ".card", strlen(".card"));
 		//printf("%s\n", card_file_name);
 		card_file = fopen(card_file_name, "wb");
 		if(card_file != NULL){
-			ret = fwrite(new_user.card_key, 1, sizeof(new_user.card_key), card_file);
+			ret = fwrite(new_user->card_key, 1, sizeof(new_user->card_key), card_file);
 			fclose(card_file);
-			if (ret == sizeof(new_user.card_key)){
+			if (ret == sizeof(new_user->card_key)){
 				printf("Created user %s\n", username);
+				bank->user_count++;
 				return;
 			}
 		}
@@ -164,8 +162,10 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 	else if (strcmp(cmd_arg, "deposit") == 0){
 		pos = cmd_pos;
 		ret = get_letter_arg(command, pos, &arg);
+		memcpy(username, arg, strlen(arg));
+		username[strlen(arg)]=0;
 		if(ret > 0){
-			if((user = hash_table_find(bank->users, arg)) == NULL){
+			if((user = hash_table_find(bank->users, username)) == NULL){
 				printf("No such user\n");
 				return;
 			}
@@ -197,8 +197,10 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 	else if(strcmp(cmd_arg, "balance") == 0){
 		pos = cmd_pos;
 		ret = get_letter_arg(command, pos, &arg);
+		memcpy(username, arg, strlen(arg));
+		username[strlen(arg)]=0;
 		if(ret > 0){
-			if((user = hash_table_find(bank->users, arg)) == NULL){
+			if((user = hash_table_find(bank->users, username)) == NULL){
 				printf("No such user\n");
 				return;
 			}
@@ -211,7 +213,7 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 	}
 	else
 		printf("Invalid command\n");
-	
+		
 	free(arg);
 	free(cmd_arg);
 
@@ -219,20 +221,57 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 
 void bank_process_remote_command(Bank *bank, char *command, size_t len)
 {
-	time_t t = time(NULL);
-    // TODO: Implement the bank side of the ATM-bank protocol
-
-	/*
-	 * The following is a toy example that simply receives a
-	 * string from the ATM, prepends "Bank got: " and echoes 
-	 * it back to the ATM before printing it to stdout.
-	 */
-	 
-    char sendline[1000];
+	time_t t = time(NULL);	 
+    char sendline[1000], *arg, *cmd_arg, username[250];
+	User *user;
+	int ret=0, pos=0, cmd_pos = 0, i=0, balance_update;
+	
+	arg = malloc(250 * sizeof(char));
+	cmd_arg = malloc(250 * sizeof(char));
+	
+	//TODO: decrypt and verify signature of message, check timestamp/counter
+	
     command[len]=0;
+	printf("bank got %s\n", command);
+	ret = get_ascii_arg(command, cmd_pos, &cmd_arg);
+	cmd_pos += ret+1;
+	
+	if (strcmp(cmd_arg, "get-user")==0){
+		pos = cmd_pos;
+		ret = get_letter_arg(command, pos, &arg);
+		if (ret > 0 && ret <= 250){
+			pos += ret+1;
+			memcpy(username, arg, strlen(arg));
+			username[strlen(arg)]=0;
+			if ((user = hash_table_find(bank->users, username)) != NULL){
+				sprintf(sendline, "found %s %d %d", user->username, user->balance, user->pin);
+				bank_send(bank, sendline, strlen(sendline));
+				return;
+			}
+			else{
+				//user doesn't exist
+				bank_send(bank, "not-found", sizeof("not-found"));
+				return;
+			}
+		}
+		
+	}
+	
+	else if (strcmp(cmd_arg, "update-balance")==0){
+		printf("updating balance\n");
+	}
+	
+	else{
+		printf("bank received invalid request\n");
+		bank_send(bank, "error", strlen("error"));
+		return;
+	}
+	
+	
+	/*
     sprintf(sendline, "Bank got: %s", command);
     bank_send(bank, sendline, strlen(sendline));
     printf("Received the following:\n");
-    fputs(command, stdout);
+    fputs(command, stdout);*/
 	
 }
