@@ -9,8 +9,7 @@ int main(int argc, char**argv)
 {
 
 	FILE *bank, *atm;
-	FILE *symm_key;
-	//unsigned char key[32];
+	unsigned char key[32], iv[32];
 	size_t path_len = 0;
 	char bank_filename[255], atm_filename[255];
 	//int error = 0, i=0;
@@ -30,16 +29,17 @@ int main(int argc, char**argv)
 	for (i=0; i< 32; i++){
 		key[i]=rand() % 128;
 	}*/
-  	// get symm_key (I generated a symm key using openssl before hand)
-	// TODO: generate a new key beforehand? each time init is called??
-	symm_key = fopen("./symm_key.pem", "rb");
-	fseek(symm_key, 0, SEEK_END); // seek to end of file
-	int symm_key_length = ftell(symm_key) + 1; // get current file pointer
-	fseek(symm_key, 0, SEEK_SET); // seek back to beginning of file
-	
-	unsigned char symm_key_txt[symm_key_length];
-	fgets(symm_key_txt, symm_key_length, symm_key);
-	fclose(symm_key);
+  	
+	if (!RAND_bytes(key, sizeof(key))){
+		printf("Error creating initialization files\n");
+		return 64;
+	}
+
+	// may or may not need iv in the long run. If need iv, must also add to .atm and .bank files
+	if (!RAND_bytes(iv, sizeof(iv))){
+		printf("Error creating initialization files\n");
+		return 64;
+	}
 	
 	//create filenames
 	path_len = strlen(argv[1]);
@@ -66,8 +66,8 @@ int main(int argc, char**argv)
 		return 64;
 	}
 	
-	fwrite(symm_key_txt, 1, sizeof(symm_key_txt), bank);
-	fwrite(symm_key_txt, 1, sizeof(symm_key_txt), atm);
+	fwrite(key, 1, sizeof(key), bank);
+	fwrite(key, 1, sizeof(key), atm);
 	fclose(bank);
 	fclose(atm);
 	
