@@ -120,7 +120,7 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 			}
 		}
 		if (input_error) {
-			printf("Usage: create-user <user-name> <pin> <balance>\n");
+			printf("Usage:  create-user <user-name> <pin> <balance>\n");
 			return;
 		}
 		
@@ -224,7 +224,7 @@ void bank_process_remote_command(Bank *bank, char *command, size_t len)
 	time_t t = time(NULL);	 
     char sendline[1000], *arg, *cmd_arg, username[250];
 	User *user;
-	int ret=0, pos=0, cmd_pos = 0, i=0, balance_update;
+	int ret=0, pos=0, cmd_pos = 0, i=0, int_arg;
 	
 	arg = malloc(250 * sizeof(char));
 	cmd_arg = malloc(250 * sizeof(char));
@@ -236,29 +236,44 @@ void bank_process_remote_command(Bank *bank, char *command, size_t len)
 	ret = get_ascii_arg(command, cmd_pos, &cmd_arg);
 	cmd_pos += ret+1;
 	
+	//has form get-user <username>
 	if (strcmp(cmd_arg, "get-user")==0){
 		pos = cmd_pos;
 		ret = get_letter_arg(command, pos, &arg);
-		if (ret > 0 && ret <= 250){
-			pos += ret+1;
-			memcpy(username, arg, strlen(arg));
-			username[strlen(arg)]=0;
-			if ((user = hash_table_find(bank->users, username)) != NULL){
-				sprintf(sendline, "found %s %d %d", user->username, user->balance, user->pin);
-				bank_send(bank, sendline, strlen(sendline));
-				return;
-			}
-			else{
-				//user doesn't exist
-				bank_send(bank, "not-found", sizeof("not-found"));
-				return;
-			}
+		//bank already checked valid username
+		pos += ret+1;
+		memcpy(username, arg, strlen(arg));
+		username[strlen(arg)]=0;
+		if ((user = hash_table_find(bank->users, username)) != NULL){
+			sprintf(sendline, "found %s %d %d", user->username, user->balance, user->pin);
+			bank_send(bank, sendline, strlen(sendline));
+			return;
 		}
-		
+		else{
+			//user doesn't exist
+			bank_send(bank, "not-found", sizeof("not-found"));
+			return;
+		}
 	}
 	
+	// has form update-balance <username> <balance>
 	else if (strcmp(cmd_arg, "update-balance")==0){
-		printf("updating balance\n");
+		pos = cmd_pos;
+		ret = get_letter_arg(command, pos, &arg);
+		//bank already checked valid username
+		pos += ret+1;
+		memcpy(username, arg, strlen(arg));
+		username[strlen(arg)]=0;
+		if ((user = hash_table_find(bank->users, username)) != NULL){
+			ret = get_digit_arg(command, pos, &int_arg);
+			printf("%s's balance updated from %d ", username, user->balance);
+			user->balance = int_arg;
+			printf("to %d\n", user->balance);
+			bank_send(bank, "success", strlen("success"));
+			return;
+		}
+		printf("error\n");
+		bank_send(bank, "error", strlen("error"));
 	}
 	
 	else{

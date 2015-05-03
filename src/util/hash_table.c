@@ -1,5 +1,6 @@
  #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include "hash_table.h"
 
@@ -101,6 +102,7 @@ void* hash_table_find(HashTable *ht, const char *key)
     uint32_t idx = hash(key, strlen(key)) % ht->num_bins;
     return list_find(ht->bins[idx], key);
 }
+
 
 void hash_table_del(HashTable *ht, const char *key)
 {
