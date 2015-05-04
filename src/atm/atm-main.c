@@ -15,8 +15,9 @@ int main(int argc, char**argv)
     char user_input[300];
 	time_t t;
 	
-    ATM *atm = atm_create(argv[1]);
-
+    ATM *atm;
+	if ((atm = atm_create(argv[1])) == 64) return 64;
+    
     printf("%s", prompt);
     fflush(stdout);
 
