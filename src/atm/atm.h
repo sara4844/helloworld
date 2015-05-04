@@ -29,6 +29,7 @@ typedef struct _ATM
 	unsigned char key[32];
 	User *current_user;
 	int logged_in;
+	int counter;
 	
     // TODO add more, as needed
 } ATM;

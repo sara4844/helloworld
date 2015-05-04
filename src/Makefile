@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -O0 -fno-stack-protector -Wall -Iutil -Iatm -Ibank -Irouter -I.
+CFLAGS = -g -O0 -fno-stack-protector -Iutil -Iatm -Ibank -Irouter -I.
 LIBS = -lcrypto
 
 UNAME := $(shell uname)
@@ -10,11 +10,11 @@ endif
 
 all: bin/atm bin/bank bin/router bin/init
 
-bin/atm : atm/atm-main.c atm/atm.c util/parse_args.c
-	${CC} ${CFLAGS} atm/atm.c atm/atm-main.c util/parse_args.c -o bin/atm $(LIBS)
+bin/atm : atm/atm-main.c atm/atm.c util/parse_args.c util/crypto.c
+	${CC} ${CFLAGS} atm/atm.c atm/atm-main.c util/parse_args.c util/crypto.c -o bin/atm $(LIBS)
 
-bin/bank : bank/bank-main.c bank/bank.c util/hash_table.c util/list.c util/parse_args.c
-	${CC} ${CFLAGS}  bank/bank.c bank/bank-main.c util/hash_table.c util/list.c util/parse_args.c -o bin/bank $(LIBS)
+bin/bank : bank/bank-main.c bank/bank.c util/hash_table.c util/list.c util/parse_args.c util/crypto.c
+	${CC} ${CFLAGS}  bank/bank.c bank/bank-main.c util/hash_table.c util/list.c util/parse_args.c util/crypto.c -o bin/bank $(LIBS)
 
 bin/router : router/router-main.c router/router.c
 	${CC} ${CFLAGS} router/router.c router/router-main.c -o bin/router $(LIBS)

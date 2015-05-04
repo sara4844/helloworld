@@ -44,7 +44,7 @@ int get_ascii_arg(char *command, int start, char **arg_out){
 int get_letter_arg(char *command, int start, char **arg_out){
 	int pos = start, arg_pos = 0;
 	char arg[250], c;
-	
+
 	while ( (c = command[pos++]) != 0){
 		if(!isspace(c)){
 			if(!(C_IS_LETTER)){

@@ -40,6 +40,7 @@ int main(int argc, char**argv)
 
        else
        {
+		   fprintf(stderr, "%d  ", incoming_port);
            fprintf(stderr, "> I don't know who this came from: dropping it\n");
        }
    }

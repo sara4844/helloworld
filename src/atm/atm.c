@@ -2,10 +2,11 @@
 #include "ports.h"
 #include "bank.h"
 #include "parse_args.h"
+#include "crypto.h"
+
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-
 #include <stdio.h>
 #include <limits.h>
 #include <ctype.h>
@@ -20,7 +21,7 @@ ATM* atm_create(char *filename)
 	FILE *atm_file = fopen(filename, "rb"); 
 	if (atm_file == NULL){
 		printf("Error opening ATM initialization file\n");
-		return 64;
+		exit(64);
 	}
 	
     if(atm == NULL)
@@ -47,6 +48,7 @@ ATM* atm_create(char *filename)
 	fread(atm->key, 1, 32, atm_file);
     atm->logged_in = 0;
 	atm->current_user = NULL;
+	atm->counter = 0;
 
     return atm;
 }
@@ -75,14 +77,13 @@ ssize_t atm_recv(ATM *atm, char *data, size_t max_data_len)
 
 void atm_process_command(ATM *atm, char *command)
 {
-	char recvline[10000], sendline[1000];
-
+	char recvline[1024 + EVP_MAX_BLOCK_LENGTH], sendline[1024 + EVP_MAX_BLOCK_LENGTH];
+	unsigned char inbuf[1024 + EVP_MAX_BLOCK_LENGTH], outbuf[1024 + EVP_MAX_BLOCK_LENGTH], iv[32];
 	char username[250], *cmd_arg, *arg, user_card_filename[255], pin_in[10];
 	int input_error = 1, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n;
 	User *current_user;
 	FILE *card_file;
 	time_t t;
-	srand((unsigned)time(&t));
 	
 	arg = malloc(250 * sizeof(char));
 	cmd_arg = malloc(250 * sizeof(char));
@@ -111,7 +112,7 @@ void atm_process_command(ATM *atm, char *command)
 			}
 			//send request to bank for User username
 			// TODO encrypt and add counter/timestamp
-			sprintf(sendline, "get-user %s", username);
+			sprintf(sendline, "get-user %s", username); //add counter here
 			printf("sending: %s\n", sendline);
 			atm_send(atm, sendline, strlen(sendline));
 			n = atm_recv(atm,recvline,10000);
@@ -174,10 +175,6 @@ void atm_process_command(ATM *atm, char *command)
 						printf("Authorized\n");
 						atm->logged_in=1;
 						atm->current_user = current_user;
-						/*
-						strncpy(atm->current_user->username,current_user.username, sizeof(current_user.username));
-						atm->current_user->pin = current_user.pin;
-						atm->current_user->balance = current_user.balance;*/
 						return;
 					}
 					

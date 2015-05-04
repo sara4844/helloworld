@@ -2,6 +2,7 @@
 #include "ports.h"
 #include "hash_table.h"
 #include "parse_args.h"
+#include "crypto.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,7 +20,7 @@ Bank* bank_create(char *filename)
 	FILE *bank_file = fopen(filename, "rb"); 
 	if (bank_file == NULL){
 		printf("Error opening Bank initialization file\n");
-		return 64;
+		exit(64);
 	}
 	
     if(bank == NULL)
@@ -46,12 +47,12 @@ Bank* bank_create(char *filename)
     
 	// Read the symmetric key from file and store in mem 
 	fread(bank->key, 1, 32, bank_file);
-	//printf("%s\n", bank->key);
 	
 	//set up hash table to store users
 	//TODO: be able to resize hash if reaches limit
 	bank->users = hash_table_create(1000);
 	bank->user_count = 0;
+	bank->counter = 0;
 
     return bank;
 }
@@ -221,8 +222,7 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 
 void bank_process_remote_command(Bank *bank, char *command, size_t len)
 {
-	time_t t = time(NULL);	 
-    char sendline[1000], *arg, *cmd_arg, username[250];
+    char sendline[1024 + EVP_MAX_BLOCK_LENGTH], *arg, *cmd_arg, username[250];
 	User *user;
 	int ret=0, pos=0, cmd_pos = 0, i=0, int_arg;
 	
@@ -230,7 +230,8 @@ void bank_process_remote_command(Bank *bank, char *command, size_t len)
 	cmd_arg = malloc(250 * sizeof(char));
 	
 	//TODO: decrypt and verify signature of message, check timestamp/counter
-	
+	printf("in bank\n");
+	printf("%s %d", command, len);
     command[len]=0;
 	printf("bank got %s\n", command);
 	ret = get_ascii_arg(command, cmd_pos, &cmd_arg);

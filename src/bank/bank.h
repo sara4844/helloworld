@@ -33,7 +33,7 @@ typedef struct _Bank
 	unsigned char key[32];
 	HashTable *users;
 	int user_count;
-    // TODO add more, as needed
+	int counter;
 } Bank;
 
 //struct used to represent a bank user account
