@@ -42,6 +42,10 @@ int main(int argc, char**argv)
 	}
 	
 	//create filenames
+	if (strlen(argv[1]) > 250) {
+		printf("Error creating initialization files\n");
+		return 64;
+	}
 	path_len = strlen(argv[1]);
 	strncpy(bank_filename, argv[1], path_len);
 	bank_filename[path_len] = 0; 
