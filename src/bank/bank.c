@@ -220,66 +220,135 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 
 }
 
-void bank_process_remote_command(Bank *bank, char *command, size_t len)
+void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 {
-    char sendline[1024 + EVP_MAX_BLOCK_LENGTH], *arg, *cmd_arg, username[250];
+    char *arg, *cmd_arg, username[250];
+	unsigned char sendline[1024 + EVP_MAX_BLOCK_LENGTH];
+	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH], *outbuf, iv[16];
 	User *user;
-	int ret=0, pos=0, cmd_pos = 0, i=0, int_arg;
+	int ret=0, pos=0, cmd_pos = 0, i=0, int_arg, crypt_len, in_len;
 	
 	arg = malloc(250 * sizeof(char));
 	cmd_arg = malloc(250 * sizeof(char));
+	outbuf = malloc(1056 * sizeof(char));
 	
-	//TODO: decrypt and verify signature of message, check timestamp/counter
-	printf("in bank\n");
-	printf("%s %d", command, len);
-    command[len]=0;
-	printf("bank got %s\n", command);
-	ret = get_ascii_arg(command, cmd_pos, &cmd_arg);
+	//clear sendline and outbuf
+	sendline[0] = 0;
+	outbuf[0] = 0;
+	enc_in[0] = 0;
+	dec_in[0] = 0;
+	
+	//TODO: verify signature of message
+	//printf("bank received: %d %d\n%s\n", len, len - sizeof(iv), command);
+	
+	//first 16 bytes are iv, rest is cipher to decrypt
+	memcpy(iv, command, sizeof(iv));
+	in_len = len - sizeof(iv);
+	memcpy(dec_in, command + sizeof(iv), in_len);
+	dec_in[len - sizeof(iv)] = 0;
+	
+	//decrypt cipher
+	crypt_len = do_crypt(dec_in, in_len, 0, bank->key, iv, &outbuf);
+	//printf("outbuf: %s\n", outbuf);
+	
+	//check counter
+	ret = get_digit_arg(outbuf, cmd_pos, &int_arg);
+	cmd_pos += ret+1;
+	//printf("received counter %d\n", int_arg);
+	
+	if(int_arg < bank->counter){
+		printf("Bank got message with an invalid counter! Ignoring...\n");
+		return;
+	}
+	if(int_arg != bank->counter){
+		printf("a packet was dropped...\n");
+	}
+	bank->counter = int_arg + 1;
+	//printf("banks's counter now: %d\n", bank->counter);
+	
+	ret = get_ascii_arg(outbuf, cmd_pos, &cmd_arg);
 	cmd_pos += ret+1;
 	
 	//has form get-user <username>
 	if (strcmp(cmd_arg, "get-user")==0){
 		pos = cmd_pos;
-		ret = get_letter_arg(command, pos, &arg);
+		ret = get_letter_arg(outbuf, pos, &arg);
 		//bank already checked valid username
 		pos += ret+1;
 		memcpy(username, arg, strlen(arg));
 		username[strlen(arg)]=0;
 		if ((user = hash_table_find(bank->users, username)) != NULL){
-			sprintf(sendline, "found %s %d %d", user->username, user->balance, user->pin);
-			bank_send(bank, sendline, strlen(sendline));
-			return;
+			sprintf(enc_in, "%d found %s %d %d", bank->counter++, user->username, user->balance, user->pin);
+			//bank_send(bank, sendline, strlen(sendline));
 		}
 		else{
 			//user doesn't exist
-			bank_send(bank, "not-found", sizeof("not-found"));
-			return;
+			sprintf(enc_in, "%d not-found", bank->counter++);
+			//bank_send(bank, "not-found", sizeof("not-found"));
 		}
+		
+		//encrypt message and send
+		//TODO: sign
+		//printf("encrypting: %s\n", enc_in);
+	
+		do{
+			do{
+				RAND_bytes(iv, sizeof(iv));
+				//printf("iv: %d\n", strlen(iv));
+			} while(strlen(iv) < 16);		
+			crypt_len = do_crypt(enc_in, strlen(enc_in), 1, bank->key, iv, &outbuf);
+			//printf("outbuf: %d crypt_len %d\n", strlen(outbuf), crypt_len);
+		} while (strlen(outbuf) != crypt_len || crypt_len == 0);
+		
+		
+		strncat(sendline, iv, sizeof(iv));
+		strncat(sendline, outbuf, crypt_len);
+		//printf("sending: %d\n", crypt_len + sizeof(iv)); 
+		bank_send(bank, sendline, crypt_len + sizeof(iv));
+		return;
 	}
 	
 	// has form update-balance <username> <balance>
 	else if (strcmp(cmd_arg, "update-balance")==0){
 		pos = cmd_pos;
-		ret = get_letter_arg(command, pos, &arg);
-		//bank already checked valid username
+		ret = get_letter_arg(outbuf, pos, &arg);
+		//atm already checked valid username
 		pos += ret+1;
 		memcpy(username, arg, strlen(arg));
 		username[strlen(arg)]=0;
 		if ((user = hash_table_find(bank->users, username)) != NULL){
-			ret = get_digit_arg(command, pos, &int_arg);
-			printf("%s's balance updated from %d ", username, user->balance);
+			ret = get_digit_arg(outbuf, pos, &int_arg);
+			//printf("%s's balance updated from %d ", username, user->balance);
 			user->balance = int_arg;
-			printf("to %d\n", user->balance);
-			bank_send(bank, "success", strlen("success"));
+			//printf("to %d\n", user->balance);
+			sprintf(enc_in, "%d success", bank->counter++);
+			
+			//encrypt message and send
+			//printf("encrypting: %s\n", enc_in);
+			do{
+				do{
+					RAND_bytes(iv, sizeof(iv));
+					//printf("iv: %d\n", strlen(iv));
+				} while(strlen(iv) < 16);
+				crypt_len = do_crypt(enc_in, strlen(enc_in), 1, bank->key, iv, &outbuf);
+				//printf("outbuf: %d crypt_len %d\n", strlen(outbuf), crypt_len);
+			} while (strlen(outbuf) != crypt_len || crypt_len == 0);
+			
+			
+			strncat(sendline, iv, sizeof(iv));
+			strncat(sendline, outbuf, crypt_len);
+			//printf("sending: %d\n", crypt_len + sizeof(iv)); 
+			bank_send(bank, sendline, crypt_len + sizeof(iv));
 			return;
+		
 		}
 		printf("error\n");
-		bank_send(bank, "error", strlen("error"));
+		//bank_send(bank, "error", strlen("error"));
 	}
 	
 	else{
 		printf("bank received invalid request\n");
-		bank_send(bank, "error", strlen("error"));
+		//bank_send(bank, "error", strlen("error"));
 		return;
 	}
 	

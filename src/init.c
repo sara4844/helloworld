@@ -65,7 +65,7 @@ int main(int argc, char**argv)
 	
 	bank = fopen(bank_filename, "wb");
 	atm = fopen(atm_filename, "wb");
-	if (bank == NULL && atm == NULL){
+	if (bank == NULL || atm == NULL){
 		printf("Error creating initialization files\n");
 		return 64;
 	}
