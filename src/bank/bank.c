@@ -90,7 +90,7 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 	time_t t;
 	srand((unsigned)time(&t));
 	
-	arg = malloc(250 * sizeof(char));
+	arg = malloc(255 * sizeof(char));
 	cmd_arg = malloc(250 * sizeof(char));
 	username = malloc(250*sizeof(char));
 	

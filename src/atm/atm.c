@@ -85,7 +85,8 @@ void atm_process_command(ATM *atm, char *command)
 	FILE *card_file;
 	time_t t;
 	
-	arg = malloc(250 * sizeof(char));
+	// 250 for the max file length + 5 for the ext.
+	arg = malloc(255 * sizeof(char));
 	cmd_arg = malloc(250 * sizeof(char));
 	current_user = malloc(sizeof(User));
 	
@@ -149,6 +150,7 @@ void atm_process_command(ATM *atm, char *command)
 					pos += ret+1;
 					current_user->pin = int_arg;
 					
+					//testing
 					printf("username: %s balance: %d pin: %d\n", current_user->username, 
 						current_user->balance, current_user->pin);
 					
@@ -206,11 +208,12 @@ void atm_process_command(ATM *atm, char *command)
 			pos += ret+1;
 			//should be no more args
 			if(get_ascii_arg(command, pos, &arg) == 0){
-				//check sufficient funds
+				//Testing check sufficient funds
 				printf("%s's balance: %d\n", atm->current_user->username, atm->current_user->balance);
 				if (amt<= atm->current_user->balance){
 					atm->current_user-> balance -= int_arg;
 					printf("$%d dispensed\n", amt);
+					// testing
 					printf("balance is now %d\n", atm->current_user->balance);
 					return;
 				}
@@ -232,7 +235,7 @@ void atm_process_command(ATM *atm, char *command)
 			return;
 		}
 		pos = cmd_pos;
-		if ((ret = get_ascii_arg(command, pos, &arg)) != 0){
+		if (get_ascii_arg(command, pos, &arg) != 0){
 			printf("Usage:  balance\n");
 			return;
 		}
@@ -260,7 +263,7 @@ void atm_process_command(ATM *atm, char *command)
 		sprintf(sendline, "update-balance %s %d", atm->current_user->username, atm->current_user->balance);
 		printf("sending %s\n", sendline);
 		//TODO add timestamp/counter, encrypt and sign
-		//TODO loop - if haven't gotten response withing timeout or got invalid response resend
+		//TODO loop - if haven't gotten response within timeout or got invalid response resend
 		atm_send(atm, sendline, strlen(sendline));
 		n = atm_recv(atm,recvline,10000);
 		recvline[n]=0;
@@ -283,6 +286,7 @@ void atm_process_command(ATM *atm, char *command)
 				atm->current_user = NULL;
 				atm->logged_in = 0;
 				printf("User logged out\n");
+				return;
 			}
 			else {
 				printf("something went wrong, resend\n");
