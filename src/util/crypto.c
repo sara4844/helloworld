@@ -17,7 +17,7 @@ unsigned char **plaintext)
                 do_encrypt);
         OPENSSL_assert(EVP_CIPHER_CTX_key_length(&ctx) == 32);
         OPENSSL_assert(EVP_CIPHER_CTX_iv_length(&ctx) == 16);
-		
+
         EVP_CipherInit_ex(&ctx, NULL, NULL, key, iv, do_encrypt);
                 inlen = strlen(in_str);
 				
@@ -42,7 +42,7 @@ unsigned char **plaintext)
         pos += outlen;
         crypted[pos] = 0;
         memcpy(*plaintext, crypted, pos+1);
-		if(pos != strlen(*plaintext))
+		//if(pos != strlen(*plaintext))
 			//printf("\nTHERE IS GOING TO BE AN ERROR!!\n\n");
 
         EVP_CIPHER_CTX_cleanup(&ctx);
@@ -50,38 +50,23 @@ unsigned char **plaintext)
         return pos;
 }
 
-/*
-int main(){
+int do_digest(char *message, unsigned char **digest)
+{
+	EVP_MD_CTX *mdctx;	
+	unsigned char md_value[EVP_MAX_MD_SIZE];
+	int md_len, i, k=0;
 
-  FILE *words_file, *plaintext_file, *cipher;
-  unsigned char plaintext[1024] = "This is top secret.", *ret, cipher_str[1024];
-  char *line;
-  size_t len;
-  ssize_t read;
-  unsigned char key[32], iv[16];
+	mdctx = EVP_MD_CTX_create();
+	EVP_DigestInit_ex(mdctx, EVP_sha512(), NULL);
+	EVP_DigestUpdate(mdctx, message, strlen(message));
+	EVP_DigestFinal_ex(mdctx, md_value, &md_len);
+	EVP_MD_CTX_destroy(mdctx);
 
-  RAND_bytes(key, sizeof(key));
-  RAND_bytes(key, sizeof(iv));
-
-  
-  
-  ret = malloc(1024 * sizeof(char));
-
-
-        
-        printf("plaintext: %s\n", plaintext);
-
-
-        do_crypt(plaintext, 1, key, iv, &ret);
-        printf("%d ret: \n%s\n", strlen(ret), ret);
-        memcpy(cipher_str, ret, strlen(ret));
-        cipher_str[strlen(ret)] = 0;
-        printf("now decrypting\n");
-        do_crypt(cipher_str, 0, key, iv, &ret);
-        printf("ret: %s\n", ret);
-
-
-
-
+	EVP_cleanup();
+	
+	for(i = 0; i < md_len; i++){
+        sprintf(*digest+k, "%02x", md_value[i]);
+		k += 2;
+	}
+	return k;
 }
-*/

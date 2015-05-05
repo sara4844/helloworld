@@ -79,18 +79,19 @@ ssize_t atm_recv(ATM *atm, char *data, size_t max_data_len)
 void atm_process_command(ATM *atm, char *command)
 {
 	unsigned char recvline[1024 + EVP_MAX_BLOCK_LENGTH], sendline[1040 + EVP_MAX_BLOCK_LENGTH];
-	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH], *outbuf, iv[16];
-	char username[250], *cmd_arg, *arg, user_card_filename[255], pin_in[10];
-	int input_error = 1, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n, 
-	crypt_len, in_len;
+	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH];
+	unsigned char *digest, *outbuf, iv[16];
+	char username[250], *cmd_arg, *arg, user_card_filename[255], pin_in[10], message[265];
+	int input_error = 1, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n;
+	int crypt_len, in_len, digest_len;
 	User *current_user;
-	time_t t;
+	//time_t t;
 	
-	// 250 for the max file length + 5 for the ext.
-	arg = malloc(255 * sizeof(char));
-	cmd_arg = malloc(250 * sizeof(char));
+	cmd_arg = malloc(250);
+	arg = malloc(255);
 	current_user = malloc(sizeof(User));
-	outbuf = malloc(1056 * sizeof(char));
+	outbuf = malloc(1024 + EVP_MAX_BLOCK_LENGTH);
+	digest = malloc(1024);
 	
 	//clear sendline and outbuf
 	sendline[0] = 0;
@@ -121,28 +122,34 @@ void atm_process_command(ATM *atm, char *command)
 			}
 			
 			//send request to bank for User username
-			// TODO sign
-			sprintf(enc_in, "%d get-user %s",atm->counter++, username);
-
+			// Write message
+			sprintf(message, "%d get-user %s",atm->counter++, username);
+			
+			// Compute Digest
+			digest_len = do_digest(message, &digest);
+			printf("digest %d\n", digest_len);
+			
+			// To encrypt: digest_len digest message
+			sprintf(enc_in, "%s %s", digest, message);
+			printf("%s %d\n", enc_in, sizeof(enc_in));
 			
 			//null bytes seem to screw things up so try until no null bytes
 			do{
 				do{
 					RAND_bytes(iv, sizeof(iv));
-					//printf("iv: %d\n", strlen(iv));
+					printf("iv: %s\n", iv);
 				} while(strlen(iv) < 16);
 				crypt_len = do_crypt(enc_in, strlen(enc_in), 1, atm->key, iv, &outbuf);
-				//printf("outbuf: %d crypt_len %d\n", strlen(outbuf), crypt_len);
+				printf("crypt\n");
 			} while (strlen(outbuf) != crypt_len || crypt_len == 0);
-			
+			printf("outbuf: %d\n", crypt_len);
 			//concat iv and outbuf
 			strncat(sendline, iv, sizeof(iv));
 			strncat(sendline, outbuf, crypt_len);
-			//printf("sending: %d\n",crypt_len + sizeof(iv)); 
 			atm_send(atm, sendline, crypt_len + sizeof(iv));
 			
 			//process response from bank
-			n = atm_recv(atm,recvline,10000);
+			n = atm_recv(atm,recvline, 1024);
 			recvline[n]=0;
 			
 			//clear sendline and outbuf

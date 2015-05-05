@@ -222,24 +222,23 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 
 void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 {
-    char *arg, *cmd_arg, username[250];
+    char *arg, *cmd_arg, username[250], message[1024];
 	unsigned char sendline[1024 + EVP_MAX_BLOCK_LENGTH];
-	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH], *outbuf, iv[16];
+	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH];
+	unsigned char *digest, rec_digest[128], *outbuf, iv[16];
 	User *user;
-	int ret=0, pos=0, cmd_pos = 0, i=0, int_arg, crypt_len, in_len;
+	int ret=0, pos=0, cmd_pos = 0, i=0, int_arg, crypt_len, in_len, digest_len;
 	
-	arg = malloc(250 * sizeof(char));
-	cmd_arg = malloc(250 * sizeof(char));
-	outbuf = malloc(1056 * sizeof(char));
+	arg = malloc(250);
+	cmd_arg = malloc(250);
+	outbuf = malloc(1024 + EVP_MAX_BLOCK_LENGTH);
+	digest = malloc(128);
 	
 	//clear sendline and outbuf
 	sendline[0] = 0;
 	outbuf[0] = 0;
 	enc_in[0] = 0;
 	dec_in[0] = 0;
-	
-	//TODO: verify signature of message
-	//printf("bank received: %d %d\n%s\n", len, len - sizeof(iv), command);
 	
 	//first 16 bytes are iv, rest is cipher to decrypt
 	memcpy(iv, command, sizeof(iv));
@@ -249,10 +248,22 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	
 	//decrypt cipher
 	crypt_len = do_crypt(dec_in, in_len, 0, bank->key, iv, &outbuf);
-	//printf("outbuf: %s\n", outbuf);
+	printf("outbuf: %s %d\n", outbuf, strlen(outbuf));
+	
+	//first 64 characters are digest, rest is message
+	memcpy(rec_digest, outbuf, 128);
+	memcpy(message, outbuf+129, crypt_len - 129);
+	printf("%s\n%s\n", rec_digest, message);
+	
+	//do_digest on message and verify it matches sent digest
+	digest_len = do_digest(message, &digest);
+	printf("%s\n", digest);
+	if(strcmp(digest, rec_digest) != 0){
+		printf("Digests don't match!\n");
+	}
 	
 	//check counter
-	ret = get_digit_arg(outbuf, cmd_pos, &int_arg);
+	ret = get_digit_arg(message, cmd_pos, &int_arg);
 	cmd_pos += ret+1;
 	//printf("received counter %d\n", int_arg);
 	
@@ -266,13 +277,13 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	bank->counter = int_arg + 1;
 	//printf("banks's counter now: %d\n", bank->counter);
 	
-	ret = get_ascii_arg(outbuf, cmd_pos, &cmd_arg);
+	ret = get_ascii_arg(message, cmd_pos, &cmd_arg);
 	cmd_pos += ret+1;
 	
 	//has form get-user <username>
 	if (strcmp(cmd_arg, "get-user")==0){
 		pos = cmd_pos;
-		ret = get_letter_arg(outbuf, pos, &arg);
+		ret = get_letter_arg(message, pos, &arg);
 		//bank already checked valid username
 		pos += ret+1;
 		memcpy(username, arg, strlen(arg));
@@ -311,13 +322,13 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	// has form update-balance <username> <balance>
 	else if (strcmp(cmd_arg, "update-balance")==0){
 		pos = cmd_pos;
-		ret = get_letter_arg(outbuf, pos, &arg);
+		ret = get_letter_arg(message, pos, &arg);
 		//atm already checked valid username
 		pos += ret+1;
 		memcpy(username, arg, strlen(arg));
 		username[strlen(arg)]=0;
 		if ((user = hash_table_find(bank->users, username)) != NULL){
-			ret = get_digit_arg(outbuf, pos, &int_arg);
+			ret = get_digit_arg(message, pos, &int_arg);
 			//printf("%s's balance updated from %d ", username, user->balance);
 			user->balance = int_arg;
 			//printf("to %d\n", user->balance);

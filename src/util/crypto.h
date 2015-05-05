@@ -10,4 +10,6 @@
 
 int do_crypt(char *in_str, int in_len, int do_encrypt, unsigned char *key,
 unsigned char *iv, unsigned char **plaintext);
+int do_digest(char *message, unsigned char **digest);
+
 #endif
