@@ -25,7 +25,7 @@ int main(int argc, char**argv)
 	{
 		atm_process_command(atm, user_input);
 		if (atm->logged_in){
-			printf("ATM (%s):", atm->current_user->username);
+			printf("ATM (%s):", atm->current_username);
 		}
 		else{
 			printf("%s", prompt);

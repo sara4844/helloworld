@@ -27,9 +27,10 @@ typedef struct _ATM
 
     // Protocol state
 	unsigned char key[32];
+	char *current_username;
 	User *current_user;
 	int logged_in;
-	int counter;
+	unsigned long counter;
 	
     // TODO add more, as needed
 } ATM;

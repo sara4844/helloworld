@@ -48,7 +48,7 @@ ATM* atm_create(char *filename)
     // Set up the protocol state
 	fread(atm->key, 1, 32, atm_file);
     atm->logged_in = 0;
-	atm->current_user = NULL;
+	atm->current_username = NULL;
 	atm->counter = 0;
 
     return atm;
@@ -81,15 +81,16 @@ void atm_process_command(ATM *atm, char *command)
 	unsigned char recvline[1024 + EVP_MAX_BLOCK_LENGTH], sendline[1040 + EVP_MAX_BLOCK_LENGTH];
 	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH];
 	unsigned char *digest, rec_digest[128], *outbuf, iv[16];
-	char username[250], *cmd_arg, *arg, user_card_filename[255], pin_in[10], message[1024];
-	int input_error = 1, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n;
+	char username[250], *cmd_arg, *arg, user_card_filename[256], pin_in[10], message[1024];
+	char cardkey[33], username_cardkey[33];
+	int input_error = 1, username_pin, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n;
 	int crypt_len, in_len, digest_len;
 	User *current_user;
+	FILE *card;
 	//time_t t;
 	
-	cmd_arg = malloc(250);
-	arg = malloc(255);
-	current_user = malloc(sizeof(User));
+	cmd_arg = malloc(251);
+	arg = malloc(251);
 	outbuf = malloc(1024 + EVP_MAX_BLOCK_LENGTH);
 	digest = malloc(128);
 	
@@ -123,15 +124,13 @@ void atm_process_command(ATM *atm, char *command)
 			
 			//send request to bank for User username
 			// Write message
-			sprintf(message, "%d get-user %s",atm->counter++, username);
+			sprintf(message, "%d authenticate-user %s",atm->counter++, username);
 			
 			// Compute Digest
 			digest_len = do_digest(message, &digest);
-			//printf("digest %d\n", digest_len);
 			
 			// To encrypt: digest_len digest message
 			sprintf(enc_in, "%s %s", digest, message);
-			//printf("%s %d\n", enc_in, sizeof(enc_in));
 			
 			//null bytes seem to screw things up so try until no null bytes
 			do{
@@ -140,7 +139,6 @@ void atm_process_command(ATM *atm, char *command)
 				} while(strlen(iv) < 16);
 				crypt_len = do_crypt(enc_in, strlen(enc_in), 1, atm->key, iv, &outbuf);
 			} while (strlen(outbuf) != crypt_len || crypt_len == 0);
-			//printf("outbuf: %d\n", crypt_len);
 			//concat iv and outbuf
 			strncat(sendline, iv, sizeof(iv));
 			strncat(sendline, outbuf, crypt_len);
@@ -171,7 +169,7 @@ void atm_process_command(ATM *atm, char *command)
 			memcpy(rec_digest, outbuf, 128);
 			memcpy(message, outbuf+129, crypt_len - 129);
 			message[crypt_len - 129] = 0;
-			printf("%s\n", message);
+			//printf("%s\n", message);
 			
 			//do_digest on message and verify it matches sent digest
 			digest_len = do_digest(message, &digest);
@@ -186,7 +184,6 @@ void atm_process_command(ATM *atm, char *command)
 			pos = 0;
 			ret = get_digit_arg(message, pos, &int_arg);
 			pos += ret+1;
-			printf("atm received counter %d\n", int_arg);
 			if(int_arg < atm->counter){
 				printf("atm got message with an invalid counter! Ignoring...\n");
 				return;
@@ -194,40 +191,50 @@ void atm_process_command(ATM *atm, char *command)
 			if(int_arg != atm->counter)
 				printf("a packet was dropped...\n");
 			atm->counter = int_arg + 1;
-			printf("atm's counter now: %d\n", atm->counter);
+			printf("ATM got counter %d, ATM counter now: %d\n", atm->counter);
 			
 			//process response
 			ret = get_ascii_arg(message, pos, &arg);
 			if(ret<= 0 ){
 				//shouldn't happen bc verifying signature but just in case
-				//printf("invalid response received.\n");
 				return;
 			}
 			else{
 				if(strcmp("found", arg) == 0){
 					pos += ret;
 					//username
+					atm->current_username = malloc(251);
 					ret = get_letter_arg(message, pos, &arg);
 					pos += ret+1;
-					strncpy(current_user->username, arg, strlen(arg));
-					current_user->username[strlen(arg)]=0;
-					
-					//balance
-					ret = get_digit_arg(message, pos, &int_arg);
-					pos += ret+1;
-					current_user->balance = int_arg;
+					strncpy(atm->current_username, arg, strlen(arg));
+					atm->current_username[strlen(arg)]=0;
 					
 					//pin
 					ret = get_digit_arg(message, pos, &int_arg);
 					pos += ret+1;
-					current_user->pin = int_arg;
+					username_pin = int_arg;
 					
+					//card
+					ret = get_ascii_arg(message, pos, &arg);
+					pos += ret+1;
+					strncpy(username_cardkey, arg, strlen(arg));
+					username_cardkey[32]=0;
+					//printf("user's card key: %s\n", username_cardkey);
 					//look for the card file and check can read
-					sprintf(user_card_filename,"%s.card", current_user->username);
-					if (access(user_card_filename, R_OK) != 0) {
-						printf("unable to access %s's card\n", current_user->username);
+					sprintf(user_card_filename,"%s.card", atm->current_username);
+					card = fopen(user_card_filename, "r");
+					if(card == NULL){
+						printf("unable to access %s's card\n", atm->current_username);
 						return;
 					}
+					ret = fread(cardkey, 1, sizeof(cardkey), card);
+					cardkey[32]=0;
+					//printf("read cardkey: %s\n", cardkey);
+					if(strncmp(cardkey, username_cardkey, sizeof(username_cardkey)) != 0){
+						printf("unable to access %s's card - cardkey mismatch\n", atm->current_username);
+						return;
+					}				 
+					
 					
 					//prompt for pin
 					printf("PIN? ");
@@ -236,7 +243,7 @@ void atm_process_command(ATM *atm, char *command)
 					ret = get_digit_arg(pin_in, pos, &int_arg);
 					pin = int_arg;
 					pos += ret + 1;
-					if(pin != current_user->pin || get_ascii_arg(pin_in, pos, &arg)){
+					if(pin != username_pin || get_ascii_arg(pin_in, pos, &arg)){
 						printf("Not Authorized\n");
 						return;
 					}
@@ -261,6 +268,8 @@ void atm_process_command(ATM *atm, char *command)
 		}
 	}
 	
+	
+	//Withdraw
 	else if (strcmp(cmd_arg, "withdraw") == 0){
 		if(!atm->logged_in){
 			printf("No user logged in\n");
@@ -275,22 +284,89 @@ void atm_process_command(ATM *atm, char *command)
 			pos += ret+1;
 			//should be no more args
 			if(get_ascii_arg(command, pos, &arg) == 0){
-				if (amt<= atm->current_user->balance){
-					atm->current_user-> balance -= int_arg;
+					
+				// Write message
+				sprintf(message, "%d withdraw %s %d",atm->counter++, atm->current_username, amt);
+				
+				// Compute Digest
+				digest_len = do_digest(message, &digest);
+				
+				// To encrypt: digest_len digest message
+				sprintf(enc_in, "%s %s", digest, message);
+				
+				//null bytes seem to screw things up so try until no null bytes
+				do{
+					do{
+						RAND_bytes(iv, sizeof(iv));
+					} while(strlen(iv) < 16);
+					crypt_len = do_crypt(enc_in, strlen(enc_in), 1, atm->key, iv, &outbuf);
+				} while (strlen(outbuf) != crypt_len || crypt_len == 0);
+				//concat iv and outbuf
+				strncat(sendline, iv, sizeof(iv));
+				strncat(sendline, outbuf, crypt_len);
+				atm_send(atm, sendline, crypt_len + sizeof(iv));
+					
+				
+				//process response from bank
+				n = atm_recv(atm,recvline, 1024);
+				recvline[n]=0;
+				
+				//clear sendline and outbuf
+				outbuf[0] = 0;
+				dec_in[0] = 0;
+				
+				//first 16 bytes are iv, rest is cipher to decrypt
+				memcpy(iv, recvline, sizeof(iv));
+				in_len = n - sizeof(iv);
+				memcpy(dec_in, recvline + sizeof(iv), in_len);
+				dec_in[in_len] = 0;
+				
+				//decrypt cipher
+				crypt_len = do_crypt(dec_in, in_len, 0, atm->key, iv, &outbuf);
+				
+				//first 64 characters are digest, rest is message
+				memcpy(rec_digest, outbuf, 128);
+				memcpy(message, outbuf+129, crypt_len - 129);
+				message[crypt_len - 129] = 0;
+				
+				//do_digest on message and verify it matches sent digest
+				digest_len = do_digest(message, &digest);
+				if(strcmp(digest, rec_digest) != 0){
+					printf("Digests don't match!\n");
+					//TODO: what to do here?
+					return -1;
+				}
+				
+				//check counter
+				pos = 0;
+				ret = get_digit_arg(message, pos, &int_arg);
+				pos += ret+1;
+				if(int_arg < atm->counter){
+					printf("atm got message with an invalid counter! Ignoring...\n");
+					return;
+				}
+				if(int_arg != atm->counter)
+					printf("a packet was dropped...\n");
+				atm->counter = int_arg + 1;
+				printf("ATM got counter %d, ATM counter now: %d\n", atm->counter);
+				
+				//process response
+				ret = get_ascii_arg(message, pos, &arg);
+				
+				if(strcmp(arg, "success") == 0)
 					printf("$%d dispensed\n", amt);
-					return;
-				}
-				else{
+				else if (strcmp(arg, "insufficient-funds") == 0)
 					printf("Insufficient funds\n");
-					return;
-				}
+				else
+					printf("error\n");
+				return;
 			}
-			
 		}
 		printf("Usage:  withdraw <amt>\n");
 		return;
-		
 	}
+	
+	
 	
 	else if (strcmp(cmd_arg, "balance") == 0){
 		if(!atm->logged_in){
@@ -303,35 +379,14 @@ void atm_process_command(ATM *atm, char *command)
 			return;
 		}
 		
-		printf("$%d\n", atm->current_user->balance);
-		return;
-	}
-	
-	// Must send balance update back to bank. User cannot succussefully log out until
-	// atm recieves confirmation from bank that balance has been updated. Resend until
-	// get confirmation
-	else if (strcmp(cmd_arg, "end-session") == 0){
-		if(!atm->logged_in){
-			printf("No user logged in\n");
-			return;
-		}
-		
-		//should be no more args
-		pos = cmd_pos;
-		if(get_ascii_arg(command, pos, &arg) != 0){
-			printf("Usage:  end-session\n");
-			return;
-		}
-		
-		sprintf(message, "%d update-balance %s %d", atm->counter++, atm->current_user->username, atm->current_user->balance);
+		// Write message
+		sprintf(message, "%d balance %s",atm->counter++, atm->current_username);
 		
 		// Compute Digest
 		digest_len = do_digest(message, &digest);
-		//printf("digest %d\n", digest_len);
 		
 		// To encrypt: digest_len digest message
 		sprintf(enc_in, "%s %s", digest, message);
-		//printf("%s %d\n", enc_in, sizeof(enc_in));
 		
 		//null bytes seem to screw things up so try until no null bytes
 		do{
@@ -340,22 +395,18 @@ void atm_process_command(ATM *atm, char *command)
 			} while(strlen(iv) < 16);
 			crypt_len = do_crypt(enc_in, strlen(enc_in), 1, atm->key, iv, &outbuf);
 		} while (strlen(outbuf) != crypt_len || crypt_len == 0);
-		//printf("outbuf: %d\n", crypt_len);
 		//concat iv and outbuf
 		strncat(sendline, iv, sizeof(iv));
 		strncat(sendline, outbuf, crypt_len);
-		
 		atm_send(atm, sendline, crypt_len + sizeof(iv));
-		
+			
 		
 		//process response from bank
-		n = atm_recv(atm,recvline,10000);
-		recvline[strlen(recvline)]=0;
+		n = atm_recv(atm,recvline, 1024);
+		recvline[n]=0;
 		
 		//clear sendline and outbuf
-		sendline[0] = 0;
 		outbuf[0] = 0;
-		enc_in[0] = 0;
 		dec_in[0] = 0;
 		
 		//first 16 bytes are iv, rest is cipher to decrypt
@@ -366,17 +417,14 @@ void atm_process_command(ATM *atm, char *command)
 		
 		//decrypt cipher
 		crypt_len = do_crypt(dec_in, in_len, 0, atm->key, iv, &outbuf);
-		//printf("outbuf: %s\n", outbuf);
 		
 		//first 64 characters are digest, rest is message
 		memcpy(rec_digest, outbuf, 128);
 		memcpy(message, outbuf+129, crypt_len - 129);
 		message[crypt_len - 129] = 0;
-		printf("%s\n", message);
 		
 		//do_digest on message and verify it matches sent digest
 		digest_len = do_digest(message, &digest);
-		//printf("%s\n", digest);
 		if(strcmp(digest, rec_digest) != 0){
 			printf("Digests don't match!\n");
 			//TODO: what to do here?
@@ -387,7 +435,6 @@ void atm_process_command(ATM *atm, char *command)
 		pos = 0;
 		ret = get_digit_arg(message, pos, &int_arg);
 		pos += ret+1;
-		printf("atm received counter %d\n", int_arg);
 		if(int_arg < atm->counter){
 			printf("atm got message with an invalid counter! Ignoring...\n");
 			return;
@@ -395,27 +442,32 @@ void atm_process_command(ATM *atm, char *command)
 		if(int_arg != atm->counter)
 			printf("a packet was dropped...\n");
 		atm->counter = int_arg + 1;
-		printf("atm's counter now: %d\n", atm->counter);
-			
+		
 		//process response
-		ret = get_ascii_arg(message, pos, &arg);
-		if(ret<= 0 ){
-			//shouldn't happen bc verifying signature but just in case
-			//printf("invalid response received.\n");
+		ret = get_digit_arg(message, pos, &int_arg);
+		
+		
+		printf("$%d\n", int_arg);
+		return;
+	}
+	
+	
+	
+	// Must send balance update back to bank. User cannot succussefully log out until
+	// atm recieves confirmation from bank that balance has been updated. Resend until
+	// get confirmation
+	else if (strcmp(cmd_arg, "end-session") == 0){
+		if(!atm->logged_in){
+			printf("No user logged in\n");
 			return;
 		}
-		else{
-			if(strcmp("success", arg) == 0){
-				//free(atm->current_user);
-				atm->current_user = NULL;
-				atm->logged_in = 0;
-				printf("User logged out\n");
-				return;
-			}
-			else {
-				printf("something went wrong, resend\n");
-			}
-		}
+		
+		free(atm->current_username);
+		atm->current_username = NULL;
+		atm->logged_in = 0;
+		printf("User logged out\n");
+		return;
+			
 	}
 	
 	else{
