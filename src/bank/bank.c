@@ -258,7 +258,7 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	memcpy(rec_digest, outbuf, 128);
 	memcpy(message, outbuf+129, crypt_len - 129);
 	message[crypt_len - 129] = 0;
-	//printf("%s\n", message);
+	printf("%s\n", message);
 	
 	//do_digest on message and verify it matches sent digest
 	digest_len = do_digest(message, &digest);

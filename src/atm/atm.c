@@ -249,12 +249,12 @@ void atm_process_command(ATM *atm, char *command)
 					if(pin != username_pin || get_ascii_arg(pin_in, pos, &arg)){
 						printf("Not Authorized\n");
 						
-						//check for 3 failed attempts in 30 seconds - lock for 30 seconds (10 for testing)
+						//If 3 failed attempts in 30 seconds, shut down
 						if((time(&t) - atm->fail_time) <= 30){
 							printf("fail within 30 secs\n");
 							if(atm->failed_attempts >= 2){
-								printf("3 failed login attempts. Wait 30 seconds before trying again\n");
-								sleep(10);
+								printf("3 failed login attempts. ATM shutting down...\n");
+								exit(-1);
 							}
 							else{
 								atm->failed_attempts++;
@@ -353,6 +353,7 @@ void atm_process_command(ATM *atm, char *command)
 				memcpy(rec_digest, outbuf, 128);
 				memcpy(message, outbuf+129, crypt_len - 129);
 				message[crypt_len - 129] = 0;
+				printf("%s\n", message);
 				
 				//do_digest on message and verify it matches sent digest
 				digest_len = do_digest(message, &digest);
