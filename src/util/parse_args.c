@@ -77,7 +77,7 @@ int get_letter_arg(char *command, int start, char **arg_out){
 int get_digit_arg(char *command, int start, int *arg_out){
 	int pos = start, arg_pos = 0;
 	char arg[11], c, *end;
-	long int long_arg;
+	unsigned long long_arg;
 	
 	
 	while ( (c = command[pos++]) != 0){
@@ -102,7 +102,7 @@ int get_digit_arg(char *command, int start, int *arg_out){
 			arg[arg_pos] = '\0';
 			//printf("  arg: %s\n", arg);
 			//TODO: strtol returns INT_MAX if number is > INT_MAX - fix this
-			long_arg = strtol(arg, &end, 10);
+			long_arg = strtoul(arg, &end, 10);
 			//printf("long_arg: %d\n", long_arg);
 			if (long_arg < 0 || long_arg > INT_MAX)
 				return -1;

@@ -32,7 +32,8 @@ typedef struct _ATM
 	int logged_in;
 	unsigned long counter;
 	int failed_attempts;
-	time_t fail_time;
+	time_t fail_time1;
+	time_t fail_time2;
 	
     // TODO add more, as needed
 } ATM;

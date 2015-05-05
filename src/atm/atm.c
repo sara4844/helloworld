@@ -51,8 +51,8 @@ ATM* atm_create(char *filename)
 	atm->current_username = NULL;
 	atm->counter = 0;
 	atm->failed_attempts = 0;
-	atm->fail_time = time(&t);
-	printf("init time is: %d\n", atm->fail_time);
+	atm->fail_time1 = -1;
+	atm->fail_time2 = -1;
 
     return atm;
 }
@@ -252,26 +252,15 @@ void atm_process_command(ATM *atm, char *command)
 						printf("Not Authorized\n");
 						
 						//If 3 failed attempts in 30 seconds, shut down
-						if((time(&t) - atm->fail_time) <= 30){
-							printf("fail within 30 secs\n");
-							if(atm->failed_attempts >= 2){
-								printf("3 failed login attempts. ATM shutting down...\n");
-								exit(-1);
-							}
-							else{
-								atm->failed_attempts++;
-								printf("%d failed attempts\n",atm->failed_attempts);
-							}
-							return;
+						if((time(&t) - atm->fail_time1) <= 30){
+							printf("3 failed login attempts. ATM shutting down...\n");
+							exit(-1);
 						}
-						//if not within 30 seconds reset fail counter
 						else{
-							atm->failed_attempts = 1;
-							atm->fail_time = time(&t);
-							printf("resetting: attempts: %d time: %d", atm->failed_attempts, atm->fail_time);
+							printf("time since last fails: %d %d\n", time(&t)-atm->fail_time1, time(&t)-atm->fail_time2);
+							atm->fail_time1 = atm->fail_time2;
+							atm->fail_time2 = time(&t);
 						}
-							
-						
 						return;
 					}
 					
