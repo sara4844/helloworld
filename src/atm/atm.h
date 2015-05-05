@@ -31,6 +31,8 @@ typedef struct _ATM
 	User *current_user;
 	int logged_in;
 	unsigned long counter;
+	int failed_attempts;
+	time_t fail_time;
 	
     // TODO add more, as needed
 } ATM;

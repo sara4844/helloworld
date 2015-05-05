@@ -3,7 +3,6 @@
 #include "bank.h"
 #include "parse_args.h"
 #include "crypto.h"
-
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -18,7 +17,8 @@
 
 ATM* atm_create(char *filename)
 {
-    ATM *atm = (ATM*) malloc(sizeof(ATM));
+    time_t t;
+	ATM *atm = (ATM*) malloc(sizeof(ATM));
 	FILE *atm_file = fopen(filename, "rb"); 
 	if (atm_file == NULL){
 		printf("Error opening ATM initialization file\n");
@@ -50,6 +50,9 @@ ATM* atm_create(char *filename)
     atm->logged_in = 0;
 	atm->current_username = NULL;
 	atm->counter = 0;
+	atm->failed_attempts = 0;
+	atm->fail_time = time(&t);
+	printf("init time is: %d\n", atm->fail_time);
 
     return atm;
 }
@@ -87,7 +90,7 @@ void atm_process_command(ATM *atm, char *command)
 	int crypt_len, in_len, digest_len;
 	User *current_user;
 	FILE *card;
-	//time_t t;
+	time_t t;
 	
 	cmd_arg = malloc(251);
 	arg = malloc(251);
@@ -169,7 +172,7 @@ void atm_process_command(ATM *atm, char *command)
 			memcpy(rec_digest, outbuf, 128);
 			memcpy(message, outbuf+129, crypt_len - 129);
 			message[crypt_len - 129] = 0;
-			//printf("%s\n", message);
+			printf("%s\n", message);
 			
 			//do_digest on message and verify it matches sent digest
 			digest_len = do_digest(message, &digest);
@@ -177,7 +180,7 @@ void atm_process_command(ATM *atm, char *command)
 			if(strcmp(digest, rec_digest) != 0){
 				printf("Digests don't match!\n");
 				//TODO: what to do here?
-				return -1;
+				return;
 			}
 			
 			//check counter
@@ -211,15 +214,15 @@ void atm_process_command(ATM *atm, char *command)
 					
 					//pin
 					ret = get_digit_arg(message, pos, &int_arg);
-					pos += ret+1;
+					pos += ret+2;
 					username_pin = int_arg;
 					
 					//card
-					ret = get_ascii_arg(message, pos, &arg);
-					pos += ret+1;
-					strncpy(username_cardkey, arg, strlen(arg));
+					//ret = get_ascii_arg(message, pos, &arg);
+					//pos += ret+1;
+					memcpy(username_cardkey, message+pos, 32);
 					username_cardkey[32]=0;
-					//printf("user's card key: %s\n", username_cardkey);
+					//printf("user's card key: %s %d %d\n", username_cardkey, sizeof(username_cardkey), strlen(username_cardkey));
 					//look for the card file and check can read
 					sprintf(user_card_filename,"%s.card", atm->current_username);
 					card = fopen(user_card_filename, "r");
@@ -245,6 +248,28 @@ void atm_process_command(ATM *atm, char *command)
 					pos += ret + 1;
 					if(pin != username_pin || get_ascii_arg(pin_in, pos, &arg)){
 						printf("Not Authorized\n");
+						
+						//check for 3 failed attempts in 30 seconds - lock for 30 seconds (10 for testing)
+						if((time(&t) - atm->fail_time) <= 30){
+							printf("fail within 30 secs\n");
+							if(atm->failed_attempts >= 2){
+								printf("3 failed login attempts. Wait 30 seconds before trying again\n");
+								sleep(10);
+							}
+							else{
+								atm->failed_attempts++;
+								printf("%d failed attempts\n",atm->failed_attempts);
+							}
+							return;
+						}
+						//if not within 30 seconds reset fail counter
+						else{
+							atm->failed_attempts = 1;
+							atm->fail_time = time(&t);
+							printf("resetting: attempts: %d time: %d", atm->failed_attempts, atm->fail_time);
+						}
+							
+						
 						return;
 					}
 					

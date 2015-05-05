@@ -53,6 +53,7 @@ Bank* bank_create(char *filename)
 	bank->users = hash_table_create(1000);
 	bank->user_count = 0;
 	bank->counter = 0;
+	bank->user_count++;
 
     return bank;
 }
@@ -144,6 +145,7 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 		}
 		 
 		hash_table_add(bank->users, username, new_user);
+		bank->user_count++;
 		strncpy(card_file_name, username, strlen(username)+1);
 		strncat(card_file_name, ".card", strlen(".card"));
 		//printf("%s\n", card_file_name);
@@ -153,6 +155,7 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 			fclose(card_file);
 			if (ret == sizeof(new_user->card_key)){
 				printf("Created user %s\n", username);
+				printf("card_key: %s\n", new_user->card_key);
 				bank->user_count++;
 				return;
 			}
@@ -263,7 +266,7 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	if(strcmp(digest, rec_digest) != 0){
 		printf("Digests don't match!\n");
 		//TODO: what to do here?
-		return -1;
+		return;
 	}
 	
 	//check counter
@@ -293,6 +296,7 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 		username[strlen(arg)]=0;
 		if ((user = hash_table_find(bank->users, username)) != NULL){
 			sprintf(message, "%d found %s %d %s", bank->counter++, user->username, user->pin, user->card_key);
+			printf("%s\n", message);
 		}
 		else{
 			sprintf(message, "%d not-found", bank->counter++);
