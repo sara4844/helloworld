@@ -83,7 +83,7 @@ void atm_process_command(ATM *atm, char *command)
 {
 	unsigned char recvline[1024 + EVP_MAX_BLOCK_LENGTH], sendline[1040 + EVP_MAX_BLOCK_LENGTH];
 	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH];
-	unsigned char *digest, rec_digest[128], *outbuf, iv[16];
+	unsigned char *digest, rec_digest[129], *outbuf, iv[16];
 	char username[250], *cmd_arg, *arg, user_card_filename[256], pin_in[10], message[1024];
 	char cardkey[33], username_cardkey[33];
 	int input_error = 1, username_pin, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n;
@@ -95,7 +95,7 @@ void atm_process_command(ATM *atm, char *command)
 	cmd_arg = malloc(251);
 	arg = malloc(251);
 	outbuf = malloc(1024 + EVP_MAX_BLOCK_LENGTH);
-	digest = malloc(128);
+	digest = malloc(129);
 	
 	//clear sendline and outbuf
 	sendline[0] = 0;
@@ -170,12 +170,14 @@ void atm_process_command(ATM *atm, char *command)
 			
 			//first 64 characters are digest, rest is message
 			memcpy(rec_digest, outbuf, 128);
+			rec_digest[128]=0;
 			memcpy(message, outbuf+129, crypt_len - 129);
 			message[crypt_len - 129] = 0;
 			printf("%s\n", message);
 			
 			//do_digest on message and verify it matches sent digest
 			digest_len = do_digest(message, &digest);
+			digest[128]=0;
 			//printf("%s\n", digest);
 			if(strcmp(digest, rec_digest) != 0){
 				printf("Digests don't match!\n");
@@ -351,12 +353,14 @@ void atm_process_command(ATM *atm, char *command)
 				
 				//first 64 characters are digest, rest is message
 				memcpy(rec_digest, outbuf, 128);
+				rec_digest[128]=0;
 				memcpy(message, outbuf+129, crypt_len - 129);
 				message[crypt_len - 129] = 0;
 				printf("%s\n", message);
 				
 				//do_digest on message and verify it matches sent digest
 				digest_len = do_digest(message, &digest);
+				digest[128]=0;
 				if(strcmp(digest, rec_digest) != 0){
 					printf("Digests don't match!\n");
 					//TODO: what to do here?
@@ -446,11 +450,13 @@ void atm_process_command(ATM *atm, char *command)
 		
 		//first 64 characters are digest, rest is message
 		memcpy(rec_digest, outbuf, 128);
+		rec_digest[128]=0;
 		memcpy(message, outbuf+129, crypt_len - 129);
 		message[crypt_len - 129] = 0;
 		
 		//do_digest on message and verify it matches sent digest
 		digest_len = do_digest(message, &digest);
+		digest[128]=0;
 		if(strcmp(digest, rec_digest) != 0){
 			printf("Digests don't match!\n");
 			//TODO: what to do here?

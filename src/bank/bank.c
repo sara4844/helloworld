@@ -229,14 +229,14 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
     char *arg, *cmd_arg, username[250], message[1024];
 	unsigned char sendline[1024 + EVP_MAX_BLOCK_LENGTH];
 	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH];
-	unsigned char *digest, rec_digest[128], *outbuf, iv[16];
+	unsigned char *digest, rec_digest[129], *outbuf, iv[16];
 	User *user;
 	int ret=0, pos=0, cmd_pos = 0, i=0, int_arg, crypt_len, in_len, digest_len;
 	
 	arg = malloc(250);
 	cmd_arg = malloc(250);
 	outbuf = malloc(1024 + EVP_MAX_BLOCK_LENGTH);
-	digest = malloc(128);
+	digest = malloc(129);
 	
 	//clear sendline and outbuf
 	sendline[0] = 0;
@@ -252,17 +252,19 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	
 	//decrypt cipher
 	crypt_len = do_crypt(dec_in, in_len, 0, bank->key, iv, &outbuf);
-	//printf("outbuf: %s %d\n", outbuf, strlen(outbuf));
+	printf("outbuf: %s %d\n", outbuf, strlen(outbuf));
 	
 	//first 64 characters are digest, rest is message
 	memcpy(rec_digest, outbuf, 128);
+	rec_digest[128]=0;
 	memcpy(message, outbuf+129, crypt_len - 129);
 	message[crypt_len - 129] = 0;
 	printf("%s\n", message);
 	
 	//do_digest on message and verify it matches sent digest
 	digest_len = do_digest(message, &digest);
-	//printf("%s\n", digest);
+	digest[128]=0;
+	printf("%s\n", digest);
 	if(strcmp(digest, rec_digest) != 0){
 		printf("Digests don't match!\n");
 		//TODO: what to do here?
