@@ -4,6 +4,7 @@
 #include <openssl/rand.h>
 #include "crypto.h"
 
+
 int do_crypt(char *in_str, int in_len, int do_encrypt, unsigned char *key, unsigned char *iv, 
 unsigned char **plaintext)
 {
@@ -17,6 +18,8 @@ unsigned char **plaintext)
                 do_encrypt);
         OPENSSL_assert(EVP_CIPHER_CTX_key_length(&ctx) == 32);
         OPENSSL_assert(EVP_CIPHER_CTX_iv_length(&ctx) == 16);
+		
+		//printf("inlen: %d %d iv: %d key: %d", strlen(in_str), in_len, strlen(iv), strlen(key));
 
         EVP_CipherInit_ex(&ctx, NULL, NULL, key, iv, do_encrypt);
                 inlen = strlen(in_str);
@@ -42,12 +45,12 @@ unsigned char **plaintext)
         pos += outlen;
         crypted[pos] = 0;
         memcpy(*plaintext, crypted, pos+1);
-		//if(pos != strlen(*plaintext))
-			//printf("\nTHERE IS GOING TO BE AN ERROR!!\n\n");
-
+		/*if(pos != strlen(*plaintext))
+			printf("\nTHERE IS GOING TO BE AN ERROR!!\n\n");
+		else
+			printf("no error\n");*/
         EVP_CIPHER_CTX_cleanup(&ctx);
-
-        return pos;
+		return pos;
 }
 
 int do_digest(char *message, unsigned char **digest)

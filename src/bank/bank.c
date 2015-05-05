@@ -244,28 +244,31 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	memcpy(iv, command, sizeof(iv));
 	in_len = len - sizeof(iv);
 	memcpy(dec_in, command + sizeof(iv), in_len);
-	dec_in[len - sizeof(iv)] = 0;
+	dec_in[in_len] = 0;
 	
 	//decrypt cipher
 	crypt_len = do_crypt(dec_in, in_len, 0, bank->key, iv, &outbuf);
-	printf("outbuf: %s %d\n", outbuf, strlen(outbuf));
+	//printf("outbuf: %s %d\n", outbuf, strlen(outbuf));
 	
 	//first 64 characters are digest, rest is message
 	memcpy(rec_digest, outbuf, 128);
 	memcpy(message, outbuf+129, crypt_len - 129);
-	printf("%s\n%s\n", rec_digest, message);
+	message[crypt_len - 129] = 0;
+	//printf("%s\n%s\n", rec_digest, message);
 	
 	//do_digest on message and verify it matches sent digest
 	digest_len = do_digest(message, &digest);
-	printf("%s\n", digest);
+	//printf("%s\n", digest);
 	if(strcmp(digest, rec_digest) != 0){
 		printf("Digests don't match!\n");
+		//TODO: what to do here?
+		return -1;
 	}
 	
 	//check counter
 	ret = get_digit_arg(message, cmd_pos, &int_arg);
 	cmd_pos += ret+1;
-	//printf("received counter %d\n", int_arg);
+	printf("received counter %d\n", int_arg);
 	
 	if(int_arg < bank->counter){
 		printf("Bank got message with an invalid counter! Ignoring...\n");
@@ -275,7 +278,7 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 		printf("a packet was dropped...\n");
 	}
 	bank->counter = int_arg + 1;
-	//printf("banks's counter now: %d\n", bank->counter);
+	printf("banks's counter now: %d\n", bank->counter);
 	
 	ret = get_ascii_arg(message, cmd_pos, &cmd_arg);
 	cmd_pos += ret+1;
@@ -284,37 +287,35 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	if (strcmp(cmd_arg, "get-user")==0){
 		pos = cmd_pos;
 		ret = get_letter_arg(message, pos, &arg);
-		//bank already checked valid username
 		pos += ret+1;
 		memcpy(username, arg, strlen(arg));
 		username[strlen(arg)]=0;
 		if ((user = hash_table_find(bank->users, username)) != NULL){
-			sprintf(enc_in, "%d found %s %d %d", bank->counter++, user->username, user->balance, user->pin);
-			//bank_send(bank, sendline, strlen(sendline));
+			sprintf(message, "%d found %s %d %d", bank->counter++, user->username, user->balance, user->pin);
 		}
 		else{
-			//user doesn't exist
-			sprintf(enc_in, "%d not-found", bank->counter++);
-			//bank_send(bank, "not-found", sizeof("not-found"));
+			sprintf(message, "%d not-found", bank->counter++);
 		}
 		
-		//encrypt message and send
-		//TODO: sign
-		//printf("encrypting: %s\n", enc_in);
-	
+		// Compute Digest
+		digest_len = do_digest(message, &digest);
+		//printf("digest %d\n", digest_len);
+		
+		// To encrypt: digest_len digest message
+		sprintf(enc_in, "%s %s", digest, message);
+		//printf("%s %d\n", enc_in, sizeof(enc_in));
+		
+		//null bytes seem to screw things up so try until no null bytes
 		do{
 			do{
 				RAND_bytes(iv, sizeof(iv));
-				//printf("iv: %d\n", strlen(iv));
-			} while(strlen(iv) < 16);		
+			} while(strlen(iv) < 16);
 			crypt_len = do_crypt(enc_in, strlen(enc_in), 1, bank->key, iv, &outbuf);
-			//printf("outbuf: %d crypt_len %d\n", strlen(outbuf), crypt_len);
 		} while (strlen(outbuf) != crypt_len || crypt_len == 0);
-		
-		
+		//printf("outbuf: %d\n", crypt_len);
+		//concat iv and outbuf
 		strncat(sendline, iv, sizeof(iv));
 		strncat(sendline, outbuf, crypt_len);
-		//printf("sending: %d\n", crypt_len + sizeof(iv)); 
 		bank_send(bank, sendline, crypt_len + sizeof(iv));
 		return;
 	}
@@ -329,26 +330,28 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 		username[strlen(arg)]=0;
 		if ((user = hash_table_find(bank->users, username)) != NULL){
 			ret = get_digit_arg(message, pos, &int_arg);
-			//printf("%s's balance updated from %d ", username, user->balance);
 			user->balance = int_arg;
-			//printf("to %d\n", user->balance);
-			sprintf(enc_in, "%d success", bank->counter++);
+			sprintf(message, "%d success", bank->counter++);
 			
-			//encrypt message and send
-			//printf("encrypting: %s\n", enc_in);
+			// Compute Digest
+			digest_len = do_digest(message, &digest);
+			//printf("digest %d\n", digest_len);
+			
+			// To encrypt: digest_len digest message
+			sprintf(enc_in, "%s %s", digest, message);
+			//printf("%s %d\n", enc_in, sizeof(enc_in));
+			
+			//null bytes seem to screw things up so try until no null bytes
 			do{
 				do{
 					RAND_bytes(iv, sizeof(iv));
-					//printf("iv: %d\n", strlen(iv));
 				} while(strlen(iv) < 16);
 				crypt_len = do_crypt(enc_in, strlen(enc_in), 1, bank->key, iv, &outbuf);
-				//printf("outbuf: %d crypt_len %d\n", strlen(outbuf), crypt_len);
 			} while (strlen(outbuf) != crypt_len || crypt_len == 0);
-			
-			
+			//printf("outbuf: %d\n", crypt_len);
+			//concat iv and outbuf
 			strncat(sendline, iv, sizeof(iv));
 			strncat(sendline, outbuf, crypt_len);
-			//printf("sending: %d\n", crypt_len + sizeof(iv)); 
 			bank_send(bank, sendline, crypt_len + sizeof(iv));
 			return;
 		

@@ -80,8 +80,8 @@ void atm_process_command(ATM *atm, char *command)
 {
 	unsigned char recvline[1024 + EVP_MAX_BLOCK_LENGTH], sendline[1040 + EVP_MAX_BLOCK_LENGTH];
 	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH];
-	unsigned char *digest, *outbuf, iv[16];
-	char username[250], *cmd_arg, *arg, user_card_filename[255], pin_in[10], message[265];
+	unsigned char *digest, rec_digest[128], *outbuf, iv[16];
+	char username[250], *cmd_arg, *arg, user_card_filename[255], pin_in[10], message[1024];
 	int input_error = 1, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n;
 	int crypt_len, in_len, digest_len;
 	User *current_user;
@@ -91,7 +91,7 @@ void atm_process_command(ATM *atm, char *command)
 	arg = malloc(255);
 	current_user = malloc(sizeof(User));
 	outbuf = malloc(1024 + EVP_MAX_BLOCK_LENGTH);
-	digest = malloc(1024);
+	digest = malloc(128);
 	
 	//clear sendline and outbuf
 	sendline[0] = 0;
@@ -127,22 +127,20 @@ void atm_process_command(ATM *atm, char *command)
 			
 			// Compute Digest
 			digest_len = do_digest(message, &digest);
-			printf("digest %d\n", digest_len);
+			//printf("digest %d\n", digest_len);
 			
 			// To encrypt: digest_len digest message
 			sprintf(enc_in, "%s %s", digest, message);
-			printf("%s %d\n", enc_in, sizeof(enc_in));
+			//printf("%s %d\n", enc_in, sizeof(enc_in));
 			
 			//null bytes seem to screw things up so try until no null bytes
 			do{
 				do{
 					RAND_bytes(iv, sizeof(iv));
-					printf("iv: %s\n", iv);
 				} while(strlen(iv) < 16);
 				crypt_len = do_crypt(enc_in, strlen(enc_in), 1, atm->key, iv, &outbuf);
-				printf("crypt\n");
 			} while (strlen(outbuf) != crypt_len || crypt_len == 0);
-			printf("outbuf: %d\n", crypt_len);
+			//printf("outbuf: %d\n", crypt_len);
 			//concat iv and outbuf
 			strncat(sendline, iv, sizeof(iv));
 			strncat(sendline, outbuf, crypt_len);
@@ -158,23 +156,37 @@ void atm_process_command(ATM *atm, char *command)
 			enc_in[0] = 0;
 			dec_in[0] = 0;
 			
-			//TODO: verify signature of message
-			//printf("atm received: %d %d\n", n, n - sizeof(iv));
 			
 			//first 16 bytes are iv, rest is cipher to decrypt
 			memcpy(iv, recvline, sizeof(iv));
 			in_len = n - sizeof(iv);
 			memcpy(dec_in, recvline + sizeof(iv), in_len);
+			dec_in[in_len] = 0;
 			
 			//decrypt cipher
 			crypt_len = do_crypt(dec_in, in_len, 0, atm->key, iv, &outbuf);
 			//printf("outbuf: %s\n", outbuf);
 			
+			//first 64 characters are digest, rest is message
+			memcpy(rec_digest, outbuf, 128);
+			memcpy(message, outbuf+129, crypt_len - 129);
+			message[crypt_len - 129] = 0;
+			printf("%s\n", message);
+			
+			//do_digest on message and verify it matches sent digest
+			digest_len = do_digest(message, &digest);
+			//printf("%s\n", digest);
+			if(strcmp(digest, rec_digest) != 0){
+				printf("Digests don't match!\n");
+				//TODO: what to do here?
+				return -1;
+			}
+			
 			//check counter
 			pos = 0;
-			ret = get_digit_arg(outbuf, pos, &int_arg);
+			ret = get_digit_arg(message, pos, &int_arg);
 			pos += ret+1;
-			//printf("atm received counter %d\n", int_arg);
+			printf("atm received counter %d\n", int_arg);
 			if(int_arg < atm->counter){
 				printf("atm got message with an invalid counter! Ignoring...\n");
 				return;
@@ -182,10 +194,10 @@ void atm_process_command(ATM *atm, char *command)
 			if(int_arg != atm->counter)
 				printf("a packet was dropped...\n");
 			atm->counter = int_arg + 1;
-			//printf("atm's counter now: %d\n", atm->counter);
+			printf("atm's counter now: %d\n", atm->counter);
 			
 			//process response
-			ret = get_ascii_arg(outbuf, pos, &arg);
+			ret = get_ascii_arg(message, pos, &arg);
 			if(ret<= 0 ){
 				//shouldn't happen bc verifying signature but just in case
 				//printf("invalid response received.\n");
@@ -195,24 +207,20 @@ void atm_process_command(ATM *atm, char *command)
 				if(strcmp("found", arg) == 0){
 					pos += ret;
 					//username
-					ret = get_letter_arg(outbuf, pos, &arg);
+					ret = get_letter_arg(message, pos, &arg);
 					pos += ret+1;
 					strncpy(current_user->username, arg, strlen(arg));
 					current_user->username[strlen(arg)]=0;
 					
 					//balance
-					ret = get_digit_arg(outbuf, pos, &int_arg);
+					ret = get_digit_arg(message, pos, &int_arg);
 					pos += ret+1;
 					current_user->balance = int_arg;
 					
 					//pin
-					ret = get_digit_arg(outbuf, pos, &int_arg);
+					ret = get_digit_arg(message, pos, &int_arg);
 					pos += ret+1;
 					current_user->pin = int_arg;
-					
-					//testing
-					//printf("username: %s balance: %d pin: %d\n", current_user->username, 
-					//	current_user->balance, current_user->pin);
 					
 					//look for the card file and check can read
 					sprintf(user_card_filename,"%s.card", current_user->username);
@@ -267,13 +275,9 @@ void atm_process_command(ATM *atm, char *command)
 			pos += ret+1;
 			//should be no more args
 			if(get_ascii_arg(command, pos, &arg) == 0){
-				//Testing check sufficient funds
-				//printf("%s's balance: %d\n", atm->current_user->username, atm->current_user->balance);
 				if (amt<= atm->current_user->balance){
 					atm->current_user-> balance -= int_arg;
 					printf("$%d dispensed\n", amt);
-					// testing
-					//printf("balance is now %d\n", atm->current_user->balance);
 					return;
 				}
 				else{
@@ -319,24 +323,28 @@ void atm_process_command(ATM *atm, char *command)
 			return;
 		}
 		
-		sprintf(enc_in, "%d update-balance %s %d", atm->counter++, atm->current_user->username, atm->current_user->balance);
-		//printf("encrypting: %s\n", enc_in);
-		//TODO sign
-		//TODO loop - if haven't gotten response within timeout or got invalid response resend
+		sprintf(message, "%d update-balance %s %d", atm->counter++, atm->current_user->username, atm->current_user->balance);
+		
+		// Compute Digest
+		digest_len = do_digest(message, &digest);
+		//printf("digest %d\n", digest_len);
+		
+		// To encrypt: digest_len digest message
+		sprintf(enc_in, "%s %s", digest, message);
+		//printf("%s %d\n", enc_in, sizeof(enc_in));
+		
+		//null bytes seem to screw things up so try until no null bytes
 		do{
-				do{
+			do{
 				RAND_bytes(iv, sizeof(iv));
-				//printf("iv: %d\n", strlen(iv));
 			} while(strlen(iv) < 16);
 			crypt_len = do_crypt(enc_in, strlen(enc_in), 1, atm->key, iv, &outbuf);
-			//printf("outbuf: %d crypt_len %d\n", strlen(outbuf), crypt_len);
 		} while (strlen(outbuf) != crypt_len || crypt_len == 0);
-			
-			
+		//printf("outbuf: %d\n", crypt_len);
 		//concat iv and outbuf
 		strncat(sendline, iv, sizeof(iv));
 		strncat(sendline, outbuf, crypt_len);
-		//printf("sending: %d\n", crypt_len + sizeof(iv)); 
+		
 		atm_send(atm, sendline, crypt_len + sizeof(iv));
 		
 		
@@ -350,23 +358,36 @@ void atm_process_command(ATM *atm, char *command)
 		enc_in[0] = 0;
 		dec_in[0] = 0;
 		
-		//TODO: verify signature of message
-		//printf("atm received: %d %d\n", n, n-sizeof(iv));
-		
 		//first 16 bytes are iv, rest is cipher to decrypt
 		memcpy(iv, recvline, sizeof(iv));
 		in_len = n - sizeof(iv);
 		memcpy(dec_in, recvline + sizeof(iv), in_len);
+		dec_in[in_len] = 0;
 		
 		//decrypt cipher
 		crypt_len = do_crypt(dec_in, in_len, 0, atm->key, iv, &outbuf);
 		//printf("outbuf: %s\n", outbuf);
 		
+		//first 64 characters are digest, rest is message
+		memcpy(rec_digest, outbuf, 128);
+		memcpy(message, outbuf+129, crypt_len - 129);
+		message[crypt_len - 129] = 0;
+		printf("%s\n", message);
+		
+		//do_digest on message and verify it matches sent digest
+		digest_len = do_digest(message, &digest);
+		//printf("%s\n", digest);
+		if(strcmp(digest, rec_digest) != 0){
+			printf("Digests don't match!\n");
+			//TODO: what to do here?
+			return -1;
+		}
+		
 		//check counter
 		pos = 0;
-		ret = get_digit_arg(outbuf, pos, &int_arg);
+		ret = get_digit_arg(message, pos, &int_arg);
 		pos += ret+1;
-		//printf("atm received counter %d\n", int_arg);
+		printf("atm received counter %d\n", int_arg);
 		if(int_arg < atm->counter){
 			printf("atm got message with an invalid counter! Ignoring...\n");
 			return;
@@ -374,10 +395,10 @@ void atm_process_command(ATM *atm, char *command)
 		if(int_arg != atm->counter)
 			printf("a packet was dropped...\n");
 		atm->counter = int_arg + 1;
-		//printf("atm's counter now: %d\n", atm->counter);
+		printf("atm's counter now: %d\n", atm->counter);
 			
 		//process response
-		ret = get_ascii_arg(outbuf, pos, &arg);
+		ret = get_ascii_arg(message, pos, &arg);
 		if(ret<= 0 ){
 			//shouldn't happen bc verifying signature but just in case
 			//printf("invalid response received.\n");
