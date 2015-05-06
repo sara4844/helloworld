@@ -14,28 +14,22 @@
 // Returns length of arg read or 0 if no args to read
 int get_ascii_arg(char *command, int start, char **arg_out){
 	int pos = start, arg_pos = 0;
-	char arg[250], c;
+	char arg[251], c;
+	
+	if(start >= strlen(command))
+		return 0;	
 
-	while ( (c = command[pos++]) != 0){
-		if(!isspace(c)){
-			if(!(C_IS_ASCII))
-				return -1;
-			arg_pos = 0;
-			arg[arg_pos++] = c;
-			while(!isspace(c = command[pos++]) && c !=0){
-				if(!(C_IS_ASCII))
-					return -1;
-				if(arg_pos > 250){
-					printf("arg too long\n");
-					return -1;					
-				}
-				arg[arg_pos++] = c;
-			}
-			arg[arg_pos] = '\0';
-			memcpy(*arg_out, arg, arg_pos+1);
-			break;
+	while ((c = command[pos++]) != 0 && !isspace(c)){
+		if(!(C_IS_ASCII))
+			return -1;
+		if(arg_pos >= 250){
+			return -1;					
 		}
+		arg[arg_pos++] = c;
 	}
+	arg[arg_pos] = '\0';
+	memcpy(*arg_out, arg, arg_pos+1);
+
 	return arg_pos;
 }
 
@@ -43,32 +37,22 @@ int get_ascii_arg(char *command, int start, char **arg_out){
 // Returns length of arg read or 0 if no args to read
 int get_letter_arg(char *command, int start, char **arg_out){
 	int pos = start, arg_pos = 0;
-	char arg[250], c;
+	char arg[251], c;
+	
+	if(start >= strlen(command))
+		return 0;	
 
-	while ( (c = command[pos++]) != 0){
-		if(!isspace(c)){
-			if(!(C_IS_LETTER)){
-				printf("%c is not a letter\n", c);
-				return -1;
-			}
-			arg_pos = 0;
-			arg[arg_pos++] = c;
-			while(!isspace(c = command[pos++]) && c !=0){
-				if(!(C_IS_LETTER)){
-					printf("%c is not a letter\n",c );
-					return -1;
-				}
-				if(arg_pos > 250){
-					printf("arg too long\n");
-					return -1;					
-				}
-				arg[arg_pos++] = c;
-			}
-			arg[arg_pos] = '\0';
-			memcpy(*arg_out, arg, arg_pos+1);
-			break;
+	while ((c = command[pos++]) != 0 && !isspace(c)){
+		if(!(C_IS_LETTER))
+			return -1;
+		if(arg_pos >= 250){
+			return -1;					
 		}
+		arg[arg_pos++] = c;
 	}
+	arg[arg_pos] = '\0';
+	memcpy(*arg_out, arg, arg_pos+1);
+
 	return arg_pos;
 }
 
@@ -79,37 +63,24 @@ int get_digit_arg(char *command, int start, int *arg_out){
 	char arg[11], c, *end;
 	unsigned long long_arg;
 	
-	
-	while ( (c = command[pos++]) != 0){
-		if(!isspace(c)){
-			if(!(C_IS_DIGIT)){
-				printf("not a digit\n");
-				return -1;
-			}
-			arg_pos = 0;
-			arg[arg_pos++] = c;
-			while(!isspace(c = command[pos++]) && c !=0){
-				if(!(C_IS_DIGIT)){
-					printf("not a digit\n");
-					return -1;
-				}
-				if(arg_pos > 10){
-					//printf("arg too long\n");
-					return -1;					
-				}
-				arg[arg_pos++] = c;
-			}
-			arg[arg_pos] = '\0';
-			//printf("  arg: %s\n", arg);
-			//TODO: strtol returns INT_MAX if number is > INT_MAX - fix this
-			long_arg = strtoul(arg, &end, 10);
-			//printf("long_arg: %d\n", long_arg);
-			if (long_arg < 0 || long_arg > INT_MAX)
-				return -1;
-			else
-				*arg_out = (int) long_arg;
-			break;
+	if(start >= strlen(command))
+		return 0;	
+
+	while(!isspace(c = command[pos++]) && c !=0){
+		if(!(C_IS_DIGIT)){
+			return -1;
 		}
+		if(arg_pos > 10){
+			return -1;					
+		}
+		arg[arg_pos++] = c;
 	}
+	arg[arg_pos] = '\0';
+	long_arg = strtoul(arg, &end, 10);
+	if (long_arg < 0 || long_arg > INT_MAX)
+		return -1;
+	else
+		*arg_out = (int) long_arg;
+			
 	return arg_pos;
 }

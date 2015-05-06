@@ -87,14 +87,8 @@ uint32_t hash(const char * data, int len)
 void hash_table_add(HashTable *ht, char *key, void *val)
 {
     uint32_t idx = hash(key, strlen(key)) % ht->num_bins;
-
-    // Do not permit duplicates
-    if(list_find(ht->bins[idx], key) == NULL)
-    {
-        ht->size -= list_size(ht->bins[idx]);
-        list_add(ht->bins[idx], key, val);
-        ht->size += list_size(ht->bins[idx]);
-    }
+	list_add(ht->bins[idx], key, val);
+	ht->size++;
 }
 
 void* hash_table_find(HashTable *ht, const char *key)

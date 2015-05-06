@@ -9,9 +9,13 @@
 #include <stdio.h>
 #include <limits.h>
 #include <ctype.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/time.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
+#define S1READY 0x01
 
 
 
@@ -66,6 +70,25 @@ void atm_free(ATM *atm)
     }
 }
 
+int waittoread(int s1, int timeout_value){
+   fd_set fds;
+   struct timeval timeout;
+   int rc; 
+   int result;
+
+   timeout.tv_sec = timeout_value;
+   timeout.tv_usec = 0;
+   FD_ZERO(&fds); 
+   FD_SET(s1, &fds); 
+   rc = select(sizeof(fds)*4, &fds, NULL, NULL, &timeout); 
+   if (rc==-1) {
+      perror("Error:  Call to select failed.");
+      return -1;
+   }
+
+   return rc;
+}
+
 ssize_t atm_send(ATM *atm, char *data, size_t data_len)
 {
     // Returns the number of bytes sent; negative on error
@@ -76,7 +99,10 @@ ssize_t atm_send(ATM *atm, char *data, size_t data_len)
 ssize_t atm_recv(ATM *atm, char *data, size_t max_data_len)
 {
     // Returns the number of bytes received; negative on error
-    return recvfrom(atm->sockfd, data, max_data_len, 0, NULL, NULL);
+	if (waittoread(atm->sockfd, 2))
+		return recvfrom(atm->sockfd, data, max_data_len, 0, NULL, NULL);
+	else
+		return -1;
 }
 
 void atm_process_command(ATM *atm, char *command)
@@ -86,25 +112,24 @@ void atm_process_command(ATM *atm, char *command)
 	unsigned char *digest, rec_digest[129], *outbuf, iv[16];
 	char username[250], *cmd_arg, *arg, user_card_filename[256], pin_in[10], message[1024];
 	char cardkey[33], username_cardkey[33];
-	int input_error = 1, username_pin, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n;
+	int input_error = 1, username_pin, pin, ret, cmd_pos = 0, pos = 0, amt, int_arg, n=0;
 	int crypt_len, in_len, digest_len;
 	User *current_user;
 	FILE *card;
-	time_t t;
+	time_t t, start;
 	
 	cmd_arg = malloc(251);
 	arg = malloc(251);
 	outbuf = malloc(1024 + EVP_MAX_BLOCK_LENGTH);
 	digest = malloc(129);
 	
-	//clear sendline and outbuf
+	//clear strings
 	sendline[0] = 0;
 	outbuf[0] = 0;
 	enc_in[0] = 0;
-	dec_in[0] = 0;
 	
 	ret = get_ascii_arg(command, pos, &cmd_arg);
-	cmd_pos += ret+1;
+	cmd_pos += ret + 1;
 	
 	if (strcmp(cmd_arg, "begin-session") == 0){
 		//get username
@@ -116,7 +141,7 @@ void atm_process_command(ATM *atm, char *command)
 		pos = cmd_pos;
 		ret = get_letter_arg(command, pos, &arg);
 		if (ret > 0 && ret <= 250){
-			pos += ret+1;
+			pos += ret + 1;
 			memcpy(username, arg, strlen(arg)+1);
 			
 			//should be no more args
@@ -127,7 +152,7 @@ void atm_process_command(ATM *atm, char *command)
 			
 			//send request to bank for User username
 			// Write message
-			sprintf(message, "%d authenticate-user %s",atm->counter++, username);
+			sprintf(message, "%lu authenticate-user %s",atm->counter++, username);
 			
 			// Compute Digest
 			digest_len = do_digest(message, &digest);
@@ -149,12 +174,15 @@ void atm_process_command(ATM *atm, char *command)
 			
 			//process response from bank
 			n = atm_recv(atm,recvline, 1024);
+			if(n < 0 ){
+				printf("Communication error occurred. Please try again.\n");
+				return;
+			}
+
 			recvline[n]=0;
 			
-			//clear sendline and outbuf
-			sendline[0] = 0;
+			//clear strings
 			outbuf[0] = 0;
-			enc_in[0] = 0;
 			dec_in[0] = 0;
 			
 			
@@ -173,70 +201,65 @@ void atm_process_command(ATM *atm, char *command)
 			rec_digest[128]=0;
 			memcpy(message, outbuf+129, crypt_len - 129);
 			message[crypt_len - 129] = 0;
-			printf("%s\n", message);
+			//printf("%s\n", message);
 			
 			//do_digest on message and verify it matches sent digest
 			digest_len = do_digest(message, &digest);
 			digest[128]=0;
-			//printf("%s\n", digest);
 			if(strcmp(digest, rec_digest) != 0){
-				printf("Digests don't match!\n");
-				//TODO: what to do here?
+				printf("Digests don't match, message was tampered with. Ignorning...\n");
 				return;
 			}
 			
 			//check counter
 			pos = 0;
 			ret = get_digit_arg(message, pos, &int_arg);
-			pos += ret+1;
+			pos += ret + 1;
 			if(int_arg < atm->counter){
-				printf("atm got message with an invalid counter! Ignoring...\n");
+				printf("Atm got message with an invalid counter. Ignoring...\n");
 				return;
 			}
 			if(int_arg != atm->counter)
-				printf("a packet was dropped...\n");
+				printf("A packet was dropped...\n");
 			atm->counter = int_arg + 1;
-			printf("ATM got counter %d, ATM counter now: %d\n", atm->counter);
+			//printf("ATM got counter %d, ATM counter now: %d\n", atm->counter);
 			
 			//process response
 			ret = get_ascii_arg(message, pos, &arg);
 			if(ret<= 0 ){
-				//shouldn't happen bc verifying signature but just in case
+				//shouldn't happen bc verifying digest 
 				return;
 			}
 			else{
 				if(strcmp("found", arg) == 0){
-					pos += ret;
+					pos += ret + 1;
 					//username
 					atm->current_username = malloc(251);
 					ret = get_letter_arg(message, pos, &arg);
-					pos += ret+1;
+					pos += ret + 1;
 					strncpy(atm->current_username, arg, strlen(arg));
 					atm->current_username[strlen(arg)]=0;
 					
 					//pin
 					ret = get_digit_arg(message, pos, &int_arg);
-					pos += ret+2;
+					pos += ret + 1;
 					username_pin = int_arg;
 					
 					//card
-					//ret = get_ascii_arg(message, pos, &arg);
-					//pos += ret+1;
 					memcpy(username_cardkey, message+pos, 32);
 					username_cardkey[32]=0;
-					//printf("user's card key: %s %d %d\n", username_cardkey, sizeof(username_cardkey), strlen(username_cardkey));
 					//look for the card file and check can read
 					sprintf(user_card_filename,"%s.card", atm->current_username);
 					card = fopen(user_card_filename, "r");
 					if(card == NULL){
-						printf("unable to access %s's card\n", atm->current_username);
+						printf("Unable to access %s's card - null card\n", atm->current_username);
 						return;
 					}
 					ret = fread(cardkey, 1, sizeof(cardkey), card);
 					cardkey[32]=0;
-					//printf("read cardkey: %s\n", cardkey);
+					
 					if(strncmp(cardkey, username_cardkey, sizeof(username_cardkey)) != 0){
-						printf("unable to access %s's card - cardkey mismatch\n", atm->current_username);
+						printf("Unable to access %s's card - cardkey mismatch\n", atm->current_username);
 						return;
 					}				 
 					
@@ -253,11 +276,11 @@ void atm_process_command(ATM *atm, char *command)
 						
 						//If 3 failed attempts in 30 seconds, shut down
 						if((time(&t) - atm->fail_time1) <= 30){
-							printf("3 failed login attempts. ATM shutting down...\n");
-							exit(-1);
+							printf("You have made 3 failed login attempts. Please wait 60 seconds before trying again.\n");
+							sleep(10);
 						}
 						else{
-							printf("time since last fails: %d %d\n", time(&t)-atm->fail_time1, time(&t)-atm->fail_time2);
+							//printf("time since last fails: %d %d\n", time(&t)-atm->fail_time1, time(&t)-atm->fail_time2);
 							atm->fail_time1 = atm->fail_time2;
 							atm->fail_time2 = time(&t);
 						}
@@ -297,12 +320,12 @@ void atm_process_command(ATM *atm, char *command)
 		ret = get_digit_arg(command, pos, &int_arg);
 		if (ret > 0){
 			amt = int_arg;
-			pos += ret+1;
+			pos += ret + 1;
 			//should be no more args
 			if(get_ascii_arg(command, pos, &arg) == 0){
 					
 				// Write message
-				sprintf(message, "%d withdraw %s %d",atm->counter++, atm->current_username, amt);
+				sprintf(message, "%lu withdraw %s %d",atm->counter++, atm->current_username, amt);
 				
 				// Compute Digest
 				digest_len = do_digest(message, &digest);
@@ -321,10 +344,13 @@ void atm_process_command(ATM *atm, char *command)
 				strncat(sendline, iv, sizeof(iv));
 				strncat(sendline, outbuf, crypt_len);
 				atm_send(atm, sendline, crypt_len + sizeof(iv));
-					
 				
 				//process response from bank
 				n = atm_recv(atm,recvline, 1024);
+				if(n < 0 ){
+					printf("Communication error occurred. Please try again.\n");
+					return;
+				}
 				recvline[n]=0;
 				
 				//clear sendline and outbuf
@@ -345,29 +371,29 @@ void atm_process_command(ATM *atm, char *command)
 				rec_digest[128]=0;
 				memcpy(message, outbuf+129, crypt_len - 129);
 				message[crypt_len - 129] = 0;
-				printf("%s\n", message);
+				//printf("%s\n", message);
 				
 				//do_digest on message and verify it matches sent digest
 				digest_len = do_digest(message, &digest);
 				digest[128]=0;
 				if(strcmp(digest, rec_digest) != 0){
-					printf("Digests don't match!\n");
-					//TODO: what to do here?
-					return -1;
+					printf("Digests don't match, message was tampered with. Ignorning...\n");
+					return;
 				}
+				
 				
 				//check counter
 				pos = 0;
 				ret = get_digit_arg(message, pos, &int_arg);
-				pos += ret+1;
+				pos += ret + 1;
 				if(int_arg < atm->counter){
-					printf("atm got message with an invalid counter! Ignoring...\n");
+					printf("ATM got message with an invalid counter! Ignoring...\n");
 					return;
 				}
 				if(int_arg != atm->counter)
 					printf("a packet was dropped...\n");
 				atm->counter = int_arg + 1;
-				printf("ATM got counter %d, ATM counter now: %d\n", atm->counter);
+				//printf("ATM got counter %d, ATM counter now: %d\n", atm->counter);
 				
 				//process response
 				ret = get_ascii_arg(message, pos, &arg);
@@ -376,8 +402,6 @@ void atm_process_command(ATM *atm, char *command)
 					printf("$%d dispensed\n", amt);
 				else if (strcmp(arg, "insufficient-funds") == 0)
 					printf("Insufficient funds\n");
-				else
-					printf("error\n");
 				return;
 			}
 		}
@@ -399,7 +423,7 @@ void atm_process_command(ATM *atm, char *command)
 		}
 		
 		// Write message
-		sprintf(message, "%d balance %s",atm->counter++, atm->current_username);
+		sprintf(message, "%lu balance %s",atm->counter++, atm->current_username);
 		
 		// Compute Digest
 		digest_len = do_digest(message, &digest);
@@ -422,6 +446,10 @@ void atm_process_command(ATM *atm, char *command)
 		
 		//process response from bank
 		n = atm_recv(atm,recvline, 1024);
+		if(n < 0 ){
+			printf("Communication error occurred. Please try again.\n");
+			return;
+		}
 		recvline[n]=0;
 		
 		//clear sendline and outbuf
@@ -447,17 +475,16 @@ void atm_process_command(ATM *atm, char *command)
 		digest_len = do_digest(message, &digest);
 		digest[128]=0;
 		if(strcmp(digest, rec_digest) != 0){
-			printf("Digests don't match!\n");
-			//TODO: what to do here?
-			return -1;
+			printf("Digests don't match, message was tampered with. Ignorning...\n");
+			return;
 		}
 		
 		//check counter
 		pos = 0;
 		ret = get_digit_arg(message, pos, &int_arg);
-		pos += ret+1;
+		pos += ret + 1;
 		if(int_arg < atm->counter){
-			printf("atm got message with an invalid counter! Ignoring...\n");
+			printf("ATM got message with an invalid counter! Ignoring...\n");
 			return;
 		}
 		if(int_arg != atm->counter)
@@ -493,14 +520,6 @@ void atm_process_command(ATM *atm, char *command)
 	
 	else{
 		printf("Invalid command\n");
+		return;
 	}
-	
-	/*
-    atm_send(atm, command, strlen(command));
-    n = atm_recv(atm,recvline,10000);
-    recvline[n]=0;
-    fputs(recvline,stdout);
-	//printf("atm time: %ld\n", t);
-	*/
-	
 }

@@ -35,7 +35,7 @@ void* list_find(List *list, const char *key)
     ListElem *curr = list->head;
     while(curr != NULL)
     {
-        if(strcmp(curr->key, key) == 0)
+		if(strcmp(curr->key, key) == 0)
             return curr->val;
         curr = curr->next;
     }
@@ -53,10 +53,13 @@ void list_add(List *list, char *key, void *val)
     elem->val = val;
     elem->next = NULL;
 
-    if(list->tail == NULL)
+    if(list->tail == NULL){
         list->head = list->tail = elem;
-    else
+	}
+    else{
         list->tail->next = elem;
+		list->tail = elem;
+	}
 
     list->size++;
 }

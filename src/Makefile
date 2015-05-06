@@ -22,10 +22,5 @@ bin/router : router/router-main.c router/router.c
 bin/init : init.c
 	${CC} ${CFLAGS} init.c -o bin/init $(LIBS)
 
-
-
-bin/test : util/crypto.c
-	${CC} ${CFLAGS} util/crypto.c -o bin/test $(LIBS)
-
 clean:
-	cd bin && rm -f atm bank router list-test hash-table-test
+	cd bin && rm -f atm bank router list-test hash-table-test init
