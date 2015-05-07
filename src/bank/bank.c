@@ -16,7 +16,6 @@ Bank* bank_create(char *filename)
 {
     Bank *bank = (Bank*) malloc(sizeof(Bank));
 	
-	// printf("%s\n", filename);
 	FILE *bank_file = fopen(filename, "rb"); 
 	if (bank_file == NULL){
 		printf("Error opening Bank initialization file\n");
@@ -103,8 +102,8 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 		ret = get_letter_arg(command, pos, &arg);
 		if (ret > 0 && ret <= 250){
 			pos += ret + 1;
-			memcpy(username, arg, strlen(arg));
-			username[strlen(arg)]=0;
+			memcpy(username, arg, ret);
+			username[ret]=0;
 			
 			// pin
 			ret = get_digit_arg(command, pos, &int_arg);
@@ -147,14 +146,12 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 		bank->user_count++;
 		strncpy(card_file_name, username, strlen(username)+1);
 		strncat(card_file_name, ".card", strlen(".card"));
-		//printf("%s\n", card_file_name);
 		card_file = fopen(card_file_name, "wb");
 		if(card_file != NULL){
 			ret = fwrite(new_user->card_key, 1, sizeof(new_user->card_key), card_file);
 			fclose(card_file);
 			if (ret == sizeof(new_user->card_key)){
 				printf("Created user %s\n", username);
-				//printf("card_key: %s\n", new_user->card_key);
 				bank->user_count++;
 				return;
 			}
@@ -167,8 +164,8 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 	else if (strcmp(cmd_arg, "deposit") == 0){
 		pos = cmd_pos;
 		ret = get_letter_arg(command, pos, &arg);
-		memcpy(username, arg, strlen(arg));
-		username[strlen(arg)]=0;
+		memcpy(username, arg, ret);
+		username[ret]=0;
 		if(ret > 0){
 			if((user = hash_table_find(bank->users, username)) == NULL){
 				printf("No such user\n");
@@ -202,8 +199,8 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 		pos = cmd_pos;
 		ret = get_letter_arg(command, pos, &arg);
 		pos += ret + 1;
-		memcpy(username, arg, strlen(arg));
-		username[strlen(arg)]=0;
+		memcpy(username, arg, ret);
+		username[ret]=0;
 		if(ret > 0 && get_ascii_arg(command, pos, &arg) == 0){
 			if((user = hash_table_find(bank->users, username)) == NULL){
 				printf("No such user\n");
@@ -223,21 +220,22 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 		
 	free(arg);
 	free(cmd_arg);
+	return;
 
 }
 
 void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 {
-    char *arg, *cmd_arg, username[251], message[1024];
-	unsigned char sendline[1024 + EVP_MAX_BLOCK_LENGTH];
-	unsigned char enc_in[1024], dec_in[1024 + EVP_MAX_BLOCK_LENGTH];
+    char *arg, *cmd_arg, username[251], message[1025];
+	unsigned char sendline[1041 + EVP_MAX_BLOCK_LENGTH];
+	unsigned char enc_in[1025], dec_in[1025 + EVP_MAX_BLOCK_LENGTH];
 	unsigned char *digest, rec_digest[129], *outbuf, iv[16];
 	User *user;
 	int ret=0, pos=0, cmd_pos = 0, i=0, int_arg, crypt_len, in_len, digest_len;
 	
 	arg = malloc(251);
 	cmd_arg = malloc(251);
-	outbuf = malloc(1024 + EVP_MAX_BLOCK_LENGTH);
+	outbuf = malloc(1025 + EVP_MAX_BLOCK_LENGTH);
 	digest = malloc(129);
 	
 	//clear sendline and outbuf
@@ -254,19 +252,16 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	
 	//decrypt cipher
 	crypt_len = do_crypt(dec_in, in_len, 0, bank->key, iv, &outbuf);
-	//printf("outbuf: %s %d\n", outbuf, strlen(outbuf));
 	
 	//first 64 characters are digest, rest is message
 	memcpy(rec_digest, outbuf, 128);
 	rec_digest[128]=0;
 	memcpy(message, outbuf+129, crypt_len - 129);
 	message[crypt_len - 129] = 0;
-	//printf("%s\n", message);
 	
 	//do_digest on message and verify it matches sent digest
 	digest_len = do_digest(message, &digest);
 	digest[128]=0;
-	//printf("%s\n", digest);
 	if(strcmp(digest, rec_digest) != 0){
 		printf("Digests don't match, message was tampered with. Ignoring...\n");
 		return;
@@ -275,17 +270,12 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	//check counter
 	ret = get_digit_arg(message, cmd_pos, &int_arg);
 	cmd_pos += ret + 1;
-	//printf("received counter %d\n", int_arg);
 	
 	if(int_arg < bank->counter){
-		printf("Bank got message with an invalid counter! Ignoring...\n");
+		//Bank got message with an invalid counter. Ignoring...
 		return;
 	}
-	if(int_arg != bank->counter){
-		printf("a packet was dropped...\n");
-	}
 	bank->counter = int_arg + 1;
-	//printf("Bank got counter %d, bank counter now: %d\n", int_arg, bank->counter);
 	
 	ret = get_ascii_arg(message, cmd_pos, &cmd_arg);
 	cmd_pos += ret + 1;
@@ -295,11 +285,10 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 		pos = cmd_pos;
 		ret = get_letter_arg(message, pos, &arg);
 		pos += ret + 1;
-		memcpy(username, arg, strlen(arg));
-		username[strlen(arg)]=0;
+		memcpy(username, arg, ret);
+		username[ret]=0;
 		if ((user = hash_table_find(bank->users, username)) != NULL){
 			sprintf(message, "%lu found %s %d %s", bank->counter++, user->username, user->pin, user->card_key);
-			//printf("%s\n", message);
 		}
 		else{
 			sprintf(message, "%lu not-found", bank->counter++);
@@ -402,7 +391,6 @@ void bank_process_remote_command(Bank *bank, unsigned char *command, size_t len)
 	
 	else{
 		printf("bank received invalid request\n");
-		//bank_send(bank, "error", strlen("error"));
 		return;
 	}
 	

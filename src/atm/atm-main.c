@@ -12,7 +12,7 @@ static const char prompt[] = "ATM: ";
 
 int main(int argc, char**argv)
 {
-    char user_input[300];
+    char user_input[1024];
 	time_t t;
 	
     ATM *atm = atm_create(argv[1]);
@@ -20,7 +20,7 @@ int main(int argc, char**argv)
     printf("%s", prompt);
     fflush(stdout);
 
-    while (fgets(user_input, 300, stdin) != NULL)
+    while (fgets(user_input, sizeof(user_input), stdin) != NULL)
 	{
 		atm_process_command(atm, user_input);
 		if (atm->logged_in){
