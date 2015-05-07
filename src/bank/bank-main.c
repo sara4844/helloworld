@@ -17,8 +17,9 @@ static const char prompt[] = "BANK: ";
 int main(int argc, char**argv)
 {
    int n;
-   char sendline[1024];
-   char recvline[1024];   
+   // space for message plus iv
+   char sendline[1025 + 16 + EVP_MAX_BLOCK_LENGTH];
+   char recvline[1025 + 16 + EVP_MAX_BLOCK_LENGTH];   
    
    Bank *bank = bank_create(argv[1]);
    printf("%s", prompt);
@@ -41,7 +42,7 @@ int main(int argc, char**argv)
        }
        else if(FD_ISSET(bank->sockfd, &fds))
        {
-           n = bank_recv(bank, recvline, 1024);
+           n = bank_recv(bank, recvline, sizeof(recvline));
            bank_process_remote_command(bank, recvline, n);
        }
    }

@@ -107,7 +107,7 @@ ssize_t atm_recv(ATM *atm, char *data, size_t max_data_len)
 
 void atm_process_command(ATM *atm, char *command)
 {
-	unsigned char recvline[1025 + EVP_MAX_BLOCK_LENGTH], sendline[1041 + EVP_MAX_BLOCK_LENGTH];
+	unsigned char recvline[1025 + 16 + EVP_MAX_BLOCK_LENGTH], sendline[1025 + 16 + EVP_MAX_BLOCK_LENGTH];
 	unsigned char enc_in[1024], dec_in[1025 + EVP_MAX_BLOCK_LENGTH];
 	unsigned char *digest, rec_digest[129], *outbuf, iv[16];
 	char username[251], *cmd_arg, *arg, user_card_filename[256], pin_in[10], message[1025];
