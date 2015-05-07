@@ -18,8 +18,8 @@ int main(int argc, char**argv)
 {
    int n;
    // space for message plus iv
-   char sendline[1025 + 16 + EVP_MAX_BLOCK_LENGTH];
-   char recvline[1025 + 16 + EVP_MAX_BLOCK_LENGTH];   
+   char sendline[1025 + 48];
+   char recvline[1025 + 48];   
    
    Bank *bank = bank_create(argv[1]);
    printf("%s", prompt);
