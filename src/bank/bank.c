@@ -19,7 +19,7 @@ Bank* bank_create(char *filename)
 	// printf("%s\n", filename);
 	FILE *bank_file = fopen(filename, "rb"); 
 	if (bank_file == NULL){
-		printf("Error opening Bank initialization file\n");
+		printf("Error opening bank initialization file\n");
 		exit(64);
 	}
 	
@@ -127,7 +127,7 @@ void bank_process_local_command(Bank *bank, char *command, size_t len)
 		
 		//check if user exists
 		if (hash_table_find(bank->users, username) != NULL){
-			printf("Error: user %s alread exists\n", username);
+			printf("Error: user %s already exists\n", username);
 			return;
 		}
 		
